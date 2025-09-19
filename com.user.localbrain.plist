@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.localbrain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/alan/IT_project/Gemini/local_brain/venv/bin/python</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>main:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/alan/IT_project/Gemini/local_brain</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/alan/IT_project/Gemini/local_brain/logs/stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/alan/IT_project/Gemini/local_brain/logs/stderr.log</string>
+</dict>
+</plist>

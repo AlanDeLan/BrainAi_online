@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Brain</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <header>
+            <h1 >Local Brain</h1>
+            <div class="controls">
+                <!-- Додаємо чекбокс "Режим Рада" перед селектором архетипу -->
+                <label style="margin-right: 10px;">
+                    <input type="checkbox" id="rada-mode-toggle">
+                    Режим "Рада"
+                </label>
+                <select id="archetype">
+                    {% for key, value in archetypes.items() %}
+                        <option value="{{ key }}">{{ value.name }}</option>
+                    {% endfor %}
+                </select>
+                <button id="history-btn">Історія</button>
+            </div>
+        </header>
+        <div id="chat-window">
+            <div class="message assistant">
+                <p>Система готова до роботи. Оберіть архетип або активуйте режим "Рада" та поставте запитання.</p>
+            </div>
+        </div>
+        <footer>
+            <form id="chat-form">
+                <textarea id="message-input" placeholder="Введіть ваше повідомлення... (Shift+Enter для нового рядка)" rows="1"></textarea>
+                <button type="submit">Відправити</button>
+            </form>
+        </footer>
+    </div>
+
+    <div id="history-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Історія розмов</h2>
+            <div class="history-columns">
+                <div id="history-list-container" class="history-list"></div>
+                <div id="history-view-container" class="history-view">
+                    <pre><code>Оберіть чат для перегляду...</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

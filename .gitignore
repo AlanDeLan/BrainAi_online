@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Віртуальні середовища
+venv/
+.venv/
+
+# IDE та редактори
+.idea/
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Секрети та ключі
+.env
+
+# Node.js (якщо використовуєте)
+node_modules/
+
+# Логи
+*.log
+
+# Історія чатів (якщо не потрібно у git)
+history/
+
+# Інше
+*.sqlite3
+*.db
