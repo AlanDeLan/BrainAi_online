@@ -93,6 +93,32 @@ footer {
 
 #chat-form {
     display: flex;
+    align-items: center;
+}
+
+/* --- Зменшений шрифт для підпису чекбокса --- */
+#chat-form label,
+#remember-chat-toggle + span,
+label[for="remember-chat-toggle"] {
+    font-size: 0.85em;
+}
+
+/* --- Виділення select архетипу --- */
+#archetype {
+    font-weight: bold;
+    background: #f0f8ff;
+    border: 2px solid #58a6ff;
+    border-radius: 6px;
+    padding: 6px 18px;
+    font-size: 1.0em;
+    color: #003366;
+    transition: border 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+#archetype:focus {
+    border: 2px solid #005fa3;
+    box-shadow: 0 0 0 2px #b3e0ff;
+    outline: none;
 }
 
 textarea#message-input {
@@ -172,6 +198,21 @@ textarea#message-input {
     color: var(--text-color);
 }
 
+.copy-btn {
+    background: none;
+    border: none;
+    color: #58a6ff;
+    font-size: 1.2em;
+    cursor: pointer;
+    margin-left: 8px;
+    vertical-align: middle;
+    transition: color 0.2s;
+}
+
+.copy-btn:hover {
+    color: #1e90ff;
+}
+
 .history-columns {
     display: flex;
     flex-grow: 1;
@@ -202,10 +243,16 @@ textarea#message-input {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
 }
 
 .history-list li:hover {
     background-color: var(--user-message-bg);
+}
+
+.history-list li span:first-child {
+    margin-right: 12px; /* Невеликий відступ між хрестиком і іменем файла */
 }
 
 .history-view {

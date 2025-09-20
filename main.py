@@ -1,7 +1,8 @@
 import os
 import json
+import re
 from typing import List
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -9,6 +10,9 @@ from pydantic import BaseModel
 from core.logic import load_archetypes, process_with_archetype
 import logging
 import aiofiles
+
+# --- Додаємо імпорт для векторної бази ---
+from vector_db.client import search_chats, delete_chat
 
 # --- Логування ---
 logger = logging.getLogger("local_brain")
@@ -60,16 +64,36 @@ async def read_root(request: Request):
     )
 
 @app.post("/process")
-async def process_text(request: ProcessRequest):
-    """Приймає текст і назву архетипа, повертає оброблений результат."""
-    if not request.text or not request.archetype:
+async def process_text(request: Request):
+    """Приймає текст, назву архетипа і прапорець remember, повертає оброблений результат."""
+    data = await request.json()
+    text = data.get("text")
+    archetype = data.get("archetype")
+    remember = data.get("remember", True)
+    if not text or not archetype:
         logger.warning("Empty text or archetype in request")
         raise HTTPException(status_code=400, detail="Text and archetype are required")
     result = process_with_archetype(
-        text=request.text,
-        archetype_name=request.archetype,
+        text=text,
+        archetype_name=archetype,
         archetypes=archetypes
     )
+    # --- Зберігаємо чат у векторну базу, якщо потрібно ---
+    try:
+        from vector_db.client import save_chat
+    except ImportError:
+        save_chat = None
+    if remember and save_chat:
+        import datetime
+        chat_id = f"{archetype}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        chat_text = f"Користувач: {text}\n{archetype}: {result.get('response', '')}"
+        save_chat(
+            chat_id=chat_id,
+            chat_text=chat_text,
+            archetypes=[archetype],
+            timestamp=datetime.datetime.now().isoformat(),
+            topic=None
+        )
     return result
 
 # --- БЛОК ДЛЯ РОБОТИ З ІСТОРІЄЮ ---
@@ -104,6 +128,25 @@ async def get_history_file(filename: str):
         return JSONResponse(status_code=404, content={"error": "File not found"})
     except Exception as e:
         logger.error(f"Error reading file {filename}: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.delete("/history/{filename}")
+async def delete_history_file(filename: str):
+    """Видаляє файл історії та відповідний запис у векторній базі."""
+    # Захист від path-injection
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return JSONResponse(status_code=400, content={"error": "Invalid filename"})
+    filepath = os.path.join(HISTORY_DIR, filename)
+    if not os.path.exists(filepath):
+        return JSONResponse(status_code=404, content={"error": "File not found"})
+    try:
+        # Витягуємо chat_id з імені файлу (до .json)
+        chat_id = re.sub(r"\.json$", "", filename)
+        os.remove(filepath)
+        if delete_chat:
+            delete_chat(chat_id)
+        return JSONResponse(content={"status": "deleted"})
+    except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # --------------------------------------------

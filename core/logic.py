@@ -5,6 +5,12 @@ import json
 from dotenv import load_dotenv
 import openai
 
+# --- Додаємо імпорт для пошуку у векторній базі ---
+try:
+    from vector_db.client import search_chats
+except ImportError:
+    search_chats = None
+
 # --- Конфігурація ---
 load_dotenv()
 
@@ -54,7 +60,8 @@ def log_interaction(archetype_name, user_text, final_prompt, response):
 
 def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     """
-    Формує промпт, обирає потрібну модель OpenAI, генерує відповідь і логує результат.
+    Формує промпт, підтягує релевантний контекст з векторної бази, 
+    обирає потрібну модель OpenAI, генерує відповідь і логує результат.
     """
     if not text or not archetype_name:
         return {"error": "Необхідно вказати текст і архетип."}
@@ -68,13 +75,23 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
         return {"error": f"Для архетипа '{archetype_name}' не вказано model_name."}
 
     system_prompt = archetype_config.get("prompt", "")
-    full_prompt = f"{system_prompt}\n\nОсь запит користувача:\n{text}"
+
+    # --- Додаємо релевантний контекст з векторної бази ---
+    context = ""
+    if search_chats:
+        similar_chats = search_chats(text, n_results=2)
+        if similar_chats:
+            context = "\n\n".join([f"Контекст з минулого чату:\n{c['text']}" for c in similar_chats])
+
+    full_prompt = f"{system_prompt}\n\n{context}\n\nОсь запит користувача:\n{text}"
 
     try:
         response = openai.chat.completions.create(
             model=model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
+                # Додаємо контекст як окреме повідомлення, якщо він є
+                *([{"role": "system", "content": context}] if context else []),
                 {"role": "user", "content": text}
             ],
             temperature=0.7,

@@ -10,9 +10,8 @@
 <body>
     <div class="chat-container">
         <header>
-            <h1 >Local Brain</h1>
+            <h1>Local Brain</h1>
             <div class="controls">
-                <!-- Додаємо чекбокс "Режим Рада" перед селектором архетипу -->
                 <label style="margin-right: 10px;">
                     <input type="checkbox" id="rada-mode-toggle">
                     Режим "Рада"
@@ -27,13 +26,17 @@
         </header>
         <div id="chat-window">
             <div class="message assistant">
-                <p>Система готова до роботи. Оберіть архетип або активуйте режим "Рада" та поставте запитання.</p>
+                <p>Готово до роботи. Оберіть архетип або активуйте "Рада" та поставте запитання.</p>
             </div>
         </div>
         <footer>
             <form id="chat-form">
-                <textarea id="message-input" placeholder="Введіть ваше повідомлення... (Shift+Enter для нового рядка)" rows="1"></textarea>
+                <textarea id="message-input" placeholder="Введіть повідомлення... (Shift+Enter — новий рядок)" rows="1"></textarea>
                 <button type="submit">Відправити</button>
+                <label style="margin-left: 10px;">
+                    <input type="checkbox" id="remember-chat-toggle" checked>
+                    Запамʼятати цей чат
+                </label>
             </form>
         </footer>
     </div>
