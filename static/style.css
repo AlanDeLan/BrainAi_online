@@ -181,8 +181,8 @@ textarea#message-input {
     padding: 20px 30px;
     border-radius: 8px;
     width: 90%;
-    max-width: 1400px; /* Збільшено */
-    height: 88vh;      /* Збільшено */
+    max-width: 1400px;
+    height: 88vh;
     box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5);
     position: relative;
     display: flex;
@@ -227,7 +227,7 @@ textarea#message-input {
     border-radius: 4px;
     overflow-y: auto;
     padding: 10px;
-    min-width: 0; /* ВИПРАВЛЕННЯ для flexbox */
+    min-width: 0;
 }
 
 .history-list ul {
@@ -252,7 +252,7 @@ textarea#message-input {
 }
 
 .history-list li span:first-child {
-    margin-right: 12px; /* Невеликий відступ між хрестиком і іменем файла */
+    margin-right: 12px;
 }
 
 .history-view {
@@ -262,15 +262,39 @@ textarea#message-input {
     overflow-y: auto;
     padding: 15px;
     background-color: var(--background-color);
-    min-width: 0; /* ВИПРАВЛЕННЯ для flexbox */
+    min-width: 0;
 }
 
-.history-view b {
-    font-weight: 500;
-    font-size: 1.1em;
-    color: var(--accent-color);
-    display: block;
-    margin-bottom: 8px;
+/* --- Мінімальні відступи між абзацами --- */
+.history-view p,
+.history-view ul,
+.history-view ol,
+.history-view li {
+    margin-top: 0.2em !important;
+    margin-bottom: 0.2em !important;
+}
+
+/* --- Один пустий рядок між заголовками --- */
+.history-view b,
+.section-title b {
+    font-weight: 700 !important;
+    font-size: 1.15em !important;
+    color: var(--accent-color) !important;
+    display: block !important;
+    margin-top: 1em !important;
+    margin-bottom: 0.2em !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0.01em !important;
+    background: none !important;
+    padding: 0 !important;
+    border: none !important;
+}
+
+/* Якщо використовуєте <hr> для розділення секцій */
+.history-view hr,
+.section-title hr {
+    margin-top: 1em !important;
+    margin-bottom: 0.5em !important;
 }
 
 .history-view pre, .message pre {

@@ -1,4 +1,5 @@
 import os
+import sys
 import datetime
 import json
 from fastapi import APIRouter, Request
@@ -9,12 +10,18 @@ try:
 except ImportError:
     save_chat = None
 
+# --- Функція для коректної роботи з ресурсами у PyInstaller ---
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 router = APIRouter()
 archetypes_dict = load_archetypes()
 
 ARCHETYPES_ORDER = ["sofiya", "lyra", "maker"]
 
-HISTORY_DIR = "history"
+HISTORY_DIR = resource_path("history")
 os.makedirs(HISTORY_DIR, exist_ok=True)
 
 @router.post("/conference/rada")

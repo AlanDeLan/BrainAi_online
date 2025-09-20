@@ -1,22 +1,25 @@
-import os
 import json
 import re
 from typing import List
 from fastapi import FastAPI, Request, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from core.logic import load_archetypes, process_with_archetype
+from core.logic import load_archetypes, process_with_archetype, save_message_to_chat, get_new_chat_id
 import logging
 import aiofiles
 
-# --- Додаємо імпорт для векторної бази ---
-from vector_db.client import search_chats, delete_chat
-
-# --- Логування ---
-logger = logging.getLogger("local_brain")
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("local_brain")
+
+# --- Функція для коректної роботи з ресурсами у PyInstaller ---
+def resource_path(relative_path):
+    """Отримати абсолютний шлях до ресурсу, працює для PyInstaller і звичайного запуску."""
+    import os, sys
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 # --- Модель вхідних даних для API ---
 class ProcessRequest(BaseModel):
@@ -40,7 +43,7 @@ else:
     logger.critical("--- CRITICAL: Failed to load archetypes! ---")
 
 # --- Константи ---
-HISTORY_DIR = "history"
+HISTORY_DIR = resource_path("history")
 
 # ---------------------------------------------
 app = FastAPI(title="Local Brain")
@@ -50,9 +53,14 @@ from conferences.rada import router as rada_router
 app.include_router(rada_router)
 
 # --- Налаштування статичних файлів та шаблонів ---
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory=resource_path("static")), name="static")
+templates = Jinja2Templates(directory=resource_path("templates"))
 # ----------------------------------------------------
+
+# --- favicon.ico ---
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(resource_path("static/favicon.ico"))
 
 # --- Маршрути (API Endpoints) ---
 
@@ -65,27 +73,36 @@ async def read_root(request: Request):
 
 @app.post("/process")
 async def process_text(request: Request):
-    """Приймає текст, назву архетипа і прапорець remember, повертає оброблений результат."""
+    """Приймає текст, назву архетипа, прапорець remember і chat_id, повертає оброблений результат."""
     data = await request.json()
     text = data.get("text")
     archetype = data.get("archetype")
     remember = data.get("remember", True)
+    chat_id = data.get("chat_id")
     if not text or not archetype:
         logger.warning("Empty text or archetype in request")
         raise HTTPException(status_code=400, detail="Text and archetype are required")
+    # Генеруємо chat_id, якщо не передано (новий чат)
+    if not chat_id:
+        chat_id = get_new_chat_id(archetype)
+    # Зберігаємо повідомлення користувача
+    if remember:
+        save_message_to_chat(chat_id, role="user", text=text, archetype=archetype)
     result = process_with_archetype(
         text=text,
         archetype_name=archetype,
         archetypes=archetypes
     )
+    # Зберігаємо відповідь асистента
+    if remember and result.get("response"):
+        save_message_to_chat(chat_id, role="assistant", text=result["response"], archetype=archetype)
     # --- Зберігаємо чат у векторну базу, якщо потрібно ---
     try:
         from vector_db.client import save_chat
     except ImportError:
         save_chat = None
-    if remember and save_chat:
+    if remember and save_chat and result.get("response"):
         import datetime
-        chat_id = f"{archetype}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         chat_text = f"Користувач: {text}\n{archetype}: {result.get('response', '')}"
         save_chat(
             chat_id=chat_id,
@@ -94,12 +111,15 @@ async def process_text(request: Request):
             timestamp=datetime.datetime.now().isoformat(),
             topic=None
         )
+    # Повертаємо результат + chat_id (щоб фронт міг його зберігати)
+    result["chat_id"] = chat_id
     return result
 
 # --- БЛОК ДЛЯ РОБОТИ З ІСТОРІЄЮ ---
 @app.get("/history", response_model=List[str])
 async def get_history_list():
     """Повертає список файлів історії, відсортований від найновішого."""
+    import os
     try:
         files = [f for f in os.listdir(HISTORY_DIR) if f.endswith('.json')]
         files.sort(reverse=True)
@@ -110,6 +130,7 @@ async def get_history_list():
 @app.get("/history/{filename}")
 async def get_history_file(filename: str):
     """Повертає вміст конкретного файлу історії."""
+    import os
     # Захист від path-injection
     if "/" in filename or "\\" in filename or ".." in filename:
         logger.warning(f"Path injection attempt: {filename}")
@@ -133,6 +154,8 @@ async def get_history_file(filename: str):
 @app.delete("/history/{filename}")
 async def delete_history_file(filename: str):
     """Видаляє файл історії та відповідний запис у векторній базі."""
+    import os
+    import re
     # Захист від path-injection
     if "/" in filename or "\\" in filename or ".." in filename:
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
@@ -143,10 +166,9 @@ async def delete_history_file(filename: str):
         # Витягуємо chat_id з імені файлу (до .json)
         chat_id = re.sub(r"\.json$", "", filename)
         os.remove(filepath)
+        from vector_db.client import delete_chat
         if delete_chat:
             delete_chat(chat_id)
         return JSONResponse(content={"status": "deleted"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-# --------------------------------------------
