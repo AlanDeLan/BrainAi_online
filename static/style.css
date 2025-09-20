@@ -154,6 +154,16 @@ textarea#message-input {
     margin-left: auto;
 }
 
+#new-chat-btn {
+    background-color: var(--assistant-message-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+}
+
 #history-btn {
     background-color: var(--assistant-message-bg);
     color: var(--text-color);
@@ -288,6 +298,22 @@ textarea#message-input {
     background: none !important;
     padding: 0 !important;
     border: none !important;
+}#new-chat-btn {
+    background-color: var(--assistant-message-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+}#new-chat-btn {
+    background-color: var(--assistant-message-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
 }
 
 /* Якщо використовуєте <hr> для розділення секцій */

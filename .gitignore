@@ -29,5 +29,4 @@ history/
 
 # Інше
 *.sqlite3
-*.dbgit add .gitignore
-git commit -am "Оновлено .gitignore та очищено індекс від зайвих файлів"
+*.db
