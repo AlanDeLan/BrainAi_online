@@ -3,19 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Brain</title>
+    <title>Local Gemini Brain</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="chat-container">
         <header>
-            <h1>Local Brain</h1>
+            <h1>Local Gemini Brain</h1>
             <div class="controls">
-                <label style="margin-right: 10px;">
-                    <input type="checkbox" id="rada-mode-toggle">
-                    Режим "Рада"
-                </label>
                 <select id="archetype">
                     {% for key, value in archetypes.items() %}
                         <option value="{{ key }}">{{ value.name }}</option>
@@ -27,7 +23,7 @@
         </header>
         <div id="chat-window">
             <div class="message assistant">
-                <p>Готово до роботи. Оберіть архетип або активуйте "Рада" та поставте запитання.</p>
+                <p>Готово до роботи. Оберіть архетип та поставте запитання.</p>
             </div>
         </div>
         <footer>

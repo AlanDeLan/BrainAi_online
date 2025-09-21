@@ -3,7 +3,9 @@ import yaml
 import datetime
 import json
 from dotenv import load_dotenv
-import openai
+
+# --- Додаємо імпорт для Google Gemini ---
+import google.generativeai as genai
 
 # --- Додаємо імпорт для пошуку у векторній базі ---
 try:
@@ -15,13 +17,13 @@ except ImportError:
 load_dotenv()
 
 try:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError("OPENAI_API_KEY не знайдено у файлі .env")
-    openai.api_key = api_key
-    print("--- OpenAI Client Configured Successfully ---")
+        raise ValueError("GOOGLE_API_KEY не знайдено у файлі .env")
+    genai.configure(api_key=api_key)
+    print("--- Google Gemini Client Configured Successfully ---")
 except Exception as e:
-    print(f"--- CRITICAL: Failed to configure OpenAI client! Error: {e} ---")
+    print(f"--- CRITICAL: Failed to configure Google Gemini client! Error: {e} ---")
 
 HISTORY_DIR = "history"
 os.makedirs(HISTORY_DIR, exist_ok=True)
@@ -60,8 +62,8 @@ def log_interaction(archetype_name, user_text, final_prompt, response):
 
 def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     """
-    Формує промпт, підтягує релевантний контекст з векторної бази, 
-    обирає потрібну модель OpenAI, генерує відповідь і логує результат.
+    Формує промпт, підтягує релевантний контекст з векторної бази,
+    обирає потрібну модель Gemini, генерує відповідь і логує результат.
     """
     if not text or not archetype_name:
         return {"error": "Необхідно вказати текст і архетип."}
@@ -69,7 +71,7 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     archetype_config = archetypes.get(archetype_name)
     if not archetype_config:
         return {"error": f"Архетип '{archetype_name}' не знайдено."}
-    
+
     model_name = archetype_config.get("model_name")
     if not model_name:
         return {"error": f"Для архетипа '{archetype_name}' не вказано model_name."}
@@ -86,21 +88,12 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     full_prompt = f"{system_prompt}\n\n{context}\n\nОсь запит користувача:\n{text}"
 
     try:
-        response = openai.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                # Додаємо контекст як окреме повідомлення, якщо він є
-                *([{"role": "system", "content": context}] if context else []),
-                {"role": "user", "content": text}
-            ],
-            temperature=0.7,
-            max_tokens=1024
-        )
-        model_response = response.choices[0].message.content.strip()
+        model = genai.GenerativeModel(model_name)
+        gemini_response = model.generate_content(full_prompt)
+        model_response = gemini_response.text.strip()
         log_interaction(archetype_name, text, full_prompt, model_response)
         return {"response": model_response}
     except Exception as e:
-        error_message = f"Помилка під час звернення до OpenAI: {e}"
+        error_message = f"Помилка під час звернення до Google Gemini: {e}"
         print(error_message)
         return {"error": error_message}
