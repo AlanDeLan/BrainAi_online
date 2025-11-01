@@ -4,11 +4,32 @@ import subprocess
 import time
 import webbrowser
 
-# --- Автоматичний перезапуск у venv ---
-VENV_PATH = os.path.join(os.path.dirname(__file__), "venv", "bin", "python3")
-if sys.executable != VENV_PATH and os.path.exists(VENV_PATH):
+# --- Автоматичний перезапуск у venv (кроссплатформенный) ---
+# Поддержка как .venv, так и venv, Windows и Linux/Mac
+def get_venv_python():
+    """Находит путь к Python в виртуальном окружении."""
+    base_dir = os.path.dirname(__file__)
+    # Проверяем .venv (приоритет)
+    for venv_name in [".venv", "venv"]:
+        if sys.platform == "win32":
+            # Windows путь
+            venv_python = os.path.join(base_dir, venv_name, "Scripts", "python.exe")
+        else:
+            # Linux/Mac путь
+            venv_python = os.path.join(base_dir, venv_name, "bin", "python3")
+        
+        if os.path.exists(venv_python):
+            return venv_python
+    return None
+
+VENV_PATH = get_venv_python()
+if VENV_PATH and sys.executable != VENV_PATH and os.path.exists(VENV_PATH):
     print("Перезапуск у віртуальному середовищі...")
-    os.execv(VENV_PATH, [VENV_PATH] + sys.argv)
+    if sys.platform == "win32":
+        # Windows использует os.execv или subprocess
+        os.execv(VENV_PATH, [VENV_PATH] + sys.argv)
+    else:
+        os.execv(VENV_PATH, [VENV_PATH] + sys.argv)
 
 def pip_install(package, import_name=None):
     try:
