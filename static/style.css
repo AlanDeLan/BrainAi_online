@@ -32,16 +32,23 @@ body {
 }
 
 header {
-    padding: 15px 20px;
+    padding: 10px 15px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    position: relative;
 }
 
 header h1, .modal-content h2 {
     margin: 0;
-    font-size: 1.2em;
+    font-size: 0.95em;
     font-weight: 400;
+}
+
+.modal-content h2 {
+    font-size: 1.1em;
 }
 
 #chat-window {
@@ -107,16 +114,36 @@ label[for="remember-chat-toggle"] {
     background: #f0f8ff;
     border: 2px solid #58a6ff;
     border-radius: 6px;
-    padding: 6px 18px;
-    font-size: 1.0em;
+    padding: 4px 12px;
+    font-size: 0.85em;
     color: #003366;
     transition: border 0.2s, box-shadow 0.2s;
     box-shadow: 0 2px 8px rgba(0,0,0,0.07);
 }
+
 #archetype:focus {
     border: 2px solid #005fa3;
     box-shadow: 0 0 0 2px #b3e0ff;
     outline: none;
+}
+
+.rada-message {
+    border-left: 3px solid var(--accent-color);
+    padding-left: 15px;
+    margin: 10px 0;
+}
+
+.rada-section {
+    margin: 15px 0;
+    padding: 10px;
+    background-color: rgba(88, 166, 255, 0.1);
+    border-radius: 6px;
+}
+
+.rada-agent-name {
+    font-weight: bold;
+    color: var(--accent-color);
+    margin-bottom: 5px;
 }
 
 textarea#message-input {
@@ -148,18 +175,107 @@ textarea#message-input {
 .controls {
     display: flex;
     align-items: center;
-    gap: 15px;
-    margin-left: auto;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
 }
 
 #history-btn, #new-chat-btn {
     background-color: var(--assistant-message-bg);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    padding: 6px 12px;
+    padding: 4px 10px;
     border-radius: 4px;
     cursor: pointer;
-    margin-left: 10px;
+    margin-left: 8px;
+    font-size: 0.75em;
+    white-space: nowrap;
+}
+
+#history-btn:hover, #new-chat-btn:hover {
+    background-color: var(--border-color);
+}
+
+/* Header Menu (Dropdown) */
+.header-menu {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.menu-btn {
+    background-color: var(--assistant-message-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75em;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.menu-btn:hover {
+    background-color: var(--border-color);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    background-color: var(--container-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    min-width: 220px;
+    z-index: 1000;
+    padding: 6px 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.dropdown-menu.hidden {
+    display: none;
+}
+
+.dropdown-menu button {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    padding: 8px 16px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.85em;
+    white-space: nowrap;
+    transition: background-color 0.2s;
+}
+
+.dropdown-menu button:hover {
+    background-color: var(--assistant-message-bg);
+}
+
+.dropdown-menu button:active {
+    background-color: var(--border-color);
+}
+
+.dropdown-divider {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 4px 0;
+}
+
+.shutdown-btn-menu {
+    color: #ff6b6b !important;
+    font-weight: 500;
+}
+
+.shutdown-btn-menu:hover {
+    background-color: rgba(139, 38, 53, 0.2) !important;
+}
+
+.shutdown-btn-menu:disabled {
+    color: #999 !important;
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .modal-overlay {
@@ -309,4 +425,361 @@ textarea#message-input {
 
 .hidden {
     display: none;
+}
+
+/* --- Стилі для форми налаштування агентів --- */
+.config-modal-content {
+    max-width: 1200px;
+    width: 95%;
+    height: 90vh;
+    overflow-y: auto;
+}
+
+.config-loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-color);
+}
+
+.archetypes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.archetype-card {
+    background-color: var(--user-message-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    position: relative;
+}
+
+.archetype-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.archetype-card-title {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: var(--accent-color);
+    margin: 0;
+}
+
+.archetype-delete-btn {
+    background-color: #ff4444;
+    color: white;
+    border: none;
+    padding: 5px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.archetype-delete-btn:hover {
+    background-color: #cc0000;
+}
+
+.archetype-form-group {
+    margin-bottom: 15px;
+}
+
+.archetype-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.archetype-form-group input,
+.archetype-form-group select,
+.archetype-form-group textarea {
+    width: 100%;
+    padding: 8px 12px;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.95em;
+}
+
+.archetype-form-group input:focus,
+.archetype-form-group select:focus,
+.archetype-form-group textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
+.archetype-form-group textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+.archetype-form-group small {
+    display: block;
+    margin-top: 5px;
+    color: #888;
+    font-size: 0.85em;
+}
+
+.additional-prompts-list {
+    margin-top: 10px;
+}
+
+.prompt-item {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: flex-start;
+}
+
+.prompt-item input {
+    flex: 1;
+}
+
+.prompt-item button {
+    background-color: #ff4444;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.prompt-item button:hover {
+    background-color: #cc0000;
+}
+
+.add-prompt-btn {
+    background-color: var(--assistant-message-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    margin-top: 5px;
+}
+
+.add-prompt-btn:hover {
+    background-color: var(--border-color);
+}
+
+.config-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.config-btn-add,
+.config-btn-save {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.config-btn-add {
+    background-color: var(--assistant-message-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.config-btn-add:hover {
+    background-color: var(--border-color);
+}
+
+.config-btn-save {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.config-btn-save:hover {
+    background-color: #4a9eff;
+}
+
+.config-message {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    display: none;
+}
+
+.config-message.success {
+    background-color: rgba(81, 207, 102, 0.2);
+    color: #51cf66;
+    border: 1px solid #51cf66;
+    display: block;
+}
+
+.config-message.error {
+    background-color: rgba(255, 107, 107, 0.2);
+    color: #ff6b6b;
+    border: 1px solid #ff6b6b;
+    display: block;
+}
+
+.prompt-type-selector {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.prompt-type-selector label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+.prompt-type-selector input[type="radio"] {
+    width: auto;
+    margin: 0;
+}
+
+.prompt-input-wrapper {
+    display: none;
+}
+
+.prompt-input-wrapper.active {
+    display: block;
+}
+
+/* AI Provider Modal Styles */
+.ai-provider-models {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: rgba(88, 166, 255, 0.1);
+    border-radius: 4px;
+    border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+/* Vector DB Modal Styles */
+.vector-db-entries-list {
+    width: 40%;
+    border-right: 1px solid var(--border-color);
+    padding: 15px;
+    overflow-y: auto;
+    max-height: 70vh;
+}
+
+.vector-db-entry-view {
+    width: 60%;
+    padding: 15px;
+    overflow-y: auto;
+    max-height: 70vh;
+}
+
+.vector-db-wrapper {
+    display: flex;
+    gap: 0;
+}
+
+.vector-db-entry-item {
+    padding: 12px;
+    margin-bottom: 10px;
+    background-color: var(--assistant-message-bg);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.vector-db-entry-item:hover {
+    background-color: var(--border-color);
+}
+
+.vector-db-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.vector-db-entry-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.vector-db-entry-actions button {
+    padding: 4px 8px;
+    font-size: 0.8em;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.vector-db-entry-actions button:hover {
+    background-color: #4a9eff;
+}
+
+.vector-db-entry-actions .vector-db-delete-btn {
+    background-color: #ff4444;
+}
+
+.vector-db-entry-actions .vector-db-delete-btn:hover {
+    background-color: #cc0000;
+}
+
+.vector-db-entry-preview {
+    color: #999;
+    font-size: 0.9em;
+    margin-bottom: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vector-db-entry-meta {
+    color: #666;
+    font-size: 0.85em;
+}
+
+.vector-db-entry-full {
+    padding: 15px;
+}
+
+.vector-db-entry-full h3 {
+    margin-top: 0;
+    color: var(--accent-color);
+}
+
+.vector-db-entry-meta-full,
+.vector-db-entry-document-full {
+    margin-top: 15px;
+}
+
+.vector-db-entry-meta-full pre,
+.vector-db-entry-document-full pre {
+    background-color: var(--assistant-message-bg);
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.9em;
+}
+
+.vector-db-entry-edit {
+    padding: 15px;
+}
+
+.vector-db-entry-edit h3 {
+    margin-top: 0;
+    color: var(--accent-color);
 }

@@ -1,27 +1,62 @@
 import os
+import sys
 import yaml
 import datetime
 import json
 from dotenv import load_dotenv
 
-# --- Додаємо імпорт для Google Gemini ---
-import google.generativeai as genai
+# --- Import for AI providers ---
+from core.ai_providers import (
+    generate_response, 
+    get_current_provider, 
+    get_provider_config,
+    normalize_model_name,
+    AIProvider
+)
 
-# --- Додаємо імпорт для пошуку у векторній базі ---
+# --- Function for correct resource handling in PyInstaller ---
+def resource_path(relative_path):
+    """Get correct path to resources for PyInstaller."""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller creates temporary folder in _MEIPASS
+        base_path = sys._MEIPASS
+    else:
+        # Normal mode - use current directory
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# --- Import for vector database search ---
 try:
     from vector_db.client import search_chats
 except ImportError:
     search_chats = None
 
-# --- Конфігурація ---
-# Завантажуємо .env файл (використовуємо dotenv_values для надійності)
+# --- Configuration ---
+# Load .env file (use dotenv_values for reliability)
 from dotenv import dotenv_values
 
-# Шукаємо .env в різних місцях
+# Function to get base directory (with PyInstaller support)
+def get_base_directory():
+    """Get base directory for searching .env file."""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller: search next to exe file
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            if 'core' in base_dir:
+                base_dir = os.path.dirname(base_dir)
+            return base_dir
+    else:
+        return os.getcwd()
+
+# Search for .env in various locations (with PyInstaller support)
+base_dir = get_base_directory()
 env_paths = [
-    os.path.join(os.path.dirname(__file__), '..', '.env'),  # Біля core/logic.py
-    os.path.join(os.path.dirname(__file__), '..', '..', '.env'),  # В корені проекту
-    '.env',  # Поточна директорія
+    os.path.join(base_dir, '.env'),  # Next to exe/script (priority for PyInstaller)
+    os.path.join(os.path.dirname(__file__), '..', '.env'),  # Near core/logic.py
+    os.path.join(os.path.dirname(__file__), '..', '..', '.env'),  # In project root
+    '.env',  # Current directory
 ]
 
 env_values = None
@@ -35,45 +70,80 @@ for env_path in env_paths:
         except Exception:
             continue
 
-# Якщо не знайдено через dotenv_values, пробуємо load_dotenv
+# If not found via dotenv_values, try load_dotenv
 if not env_values or 'GOOGLE_API_KEY' not in env_values:
+    # Also try loading from base directory
+    load_dotenv(os.path.join(base_dir, '.env'), override=True)
     load_dotenv(override=True)
     env_values = {'GOOGLE_API_KEY': os.getenv('GOOGLE_API_KEY')}
 
+# Initialize AI provider
 try:
-    api_key = env_values.get('GOOGLE_API_KEY') or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY не знайдено у файлі .env")
-    # Встановлюємо в os.environ для сумісності
-    os.environ['GOOGLE_API_KEY'] = api_key
-    genai.configure(api_key=api_key)
-    print("--- Google Gemini Client Configured Successfully ---")
+    from core.ai_providers import load_provider_config
+    provider, provider_config = load_provider_config()
+    provider_name = provider.value
+    
+    # Check for API key for current provider
+    if provider == AIProvider.GOOGLE_AI:
+        api_key = provider_config.get('google_api_key')
+        if not api_key:
+            print(f"--- WARNING: GOOGLE_API_KEY not found. Check .env file ---")
+        else:
+            print(f"--- Google AI Client Configured Successfully ---")
+    elif provider == AIProvider.OPENAI:
+        api_key = provider_config.get('openai_api_key')
+        if not api_key:
+            print(f"--- WARNING: OPENAI_API_KEY not found. Check .env file ---")
+        else:
+            print(f"--- OpenAI Client Configured Successfully ---")
+    else:
+        print(f"--- AI Provider: {provider_name} ---")
+        
 except Exception as e:
-    print(f"--- CRITICAL: Failed to configure Google Gemini client! Error: {e} ---")
+    print(f"--- CRITICAL: Failed to configure AI provider! Error: {e} ---")
 
-HISTORY_DIR = "history"
+# For history, use directory next to exe file (not in _MEIPASS)
+if hasattr(sys, '_MEIPASS'):
+    # PyInstaller: use directory where exe file is located
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        if 'core' in base_dir:
+            base_dir = os.path.dirname(base_dir)
+else:
+    base_dir = os.getcwd()
+
+HISTORY_DIR = os.path.join(base_dir, "history")
 os.makedirs(HISTORY_DIR, exist_ok=True)
 
 archetype_cache = None
 
+def reload_archetypes():
+    """Reload archetypes from file (clear cache)."""
+    global archetype_cache
+    archetype_cache = None
+    return load_archetypes()
+
 def load_prompt_file(file_path):
-    """Завантажує промпт з файлу."""
-    if not file_path or not os.path.exists(file_path):
+    """Load prompt from file."""
+    if not file_path:
         return None
     
     try:
-        # Шукаємо в різних місцях
+        # Search in various locations (with PyInstaller support)
         possible_paths = [
-            file_path,  # Абсолютний або відносний шлях
-            os.path.join("prompts", file_path),  # В папці prompts
+            resource_path(file_path),  # Via resource_path for PyInstaller
+            file_path,  # Absolute or relative path
+            resource_path(os.path.join("prompts", file_path)),  # In prompts folder
+            os.path.join("prompts", file_path),  # In prompts folder (normal mode)
             os.path.join(os.path.dirname(__file__), "..", "prompts", file_path),
             os.path.join(os.path.dirname(__file__), "..", file_path),
         ]
         
         for path in possible_paths:
-            abs_path = os.path.abspath(path)
-            if os.path.exists(abs_path):
-                with open(abs_path, "r", encoding="utf-8") as f:
+            if path and os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
                     content = f.read().strip()
                     return content
         
@@ -84,66 +154,91 @@ def load_prompt_file(file_path):
 
 def build_multistage_prompt(archetype_config):
     """
-    Будує багатоступінчастий промпт з конфігурації архетипа.
-    Підтримує:
-    - prompt: прямий текст
-    - prompt_file: шлях до файлу з основним промптом
-    - additional_prompts: список додаткових промптів (файли або текст)
+    Build multi-stage prompt from archetype configuration.
+    Supports:
+    - prompt: direct text
+    - prompt_file: path to file with main prompt
+    - additional_prompts: list of additional prompts (files or text)
     """
     prompt_parts = []
     
-    # 1. Основний промпт (з файлу або прямого тексту)
+    # 1. Main prompt (from file or direct text)
     base_prompt = None
     
-    # Спочатку перевіряємо prompt_file
+    # First check prompt_file
     if "prompt_file" in archetype_config:
         base_prompt = load_prompt_file(archetype_config["prompt_file"])
     
-    # Якщо не знайдено в файлі, використовуємо prompt
+    # If not found in file, use prompt
     if not base_prompt:
         base_prompt = archetype_config.get("prompt", "")
     
     if base_prompt:
         prompt_parts.append(base_prompt)
     
-    # 2. Додаткові промпти (можуть бути файли або текст)
+    # 2. Additional prompts (can be files or text)
     additional_prompts = archetype_config.get("additional_prompts", [])
     if isinstance(additional_prompts, str):
-        # Якщо один рядок, робимо список
+        # If single string, make it a list
         additional_prompts = [additional_prompts]
     
     for add_prompt in additional_prompts:
         if not add_prompt:
             continue
         
-        # Перевіряємо, чи це файл (закінчується на .txt, .md тощо)
+        # Check if it's a file (ends with .txt, .md, etc.)
         if isinstance(add_prompt, str) and any(add_prompt.endswith(ext) for ext in ['.txt', '.md']):
             loaded = load_prompt_file(add_prompt)
             if loaded:
                 prompt_parts.append(loaded)
         else:
-            # Це текст
+            # It's text
             prompt_parts.append(str(add_prompt))
     
-    # З'єднуємо всі частини
+    # Join all parts
     return "\n\n".join(filter(None, prompt_parts))
 
 def load_archetypes():
-    """Завантажує архетипи з YAML-файлу з кешуванням."""
+    """Load archetypes from YAML file with caching."""
     global archetype_cache
     if archetype_cache is not None:
         return archetype_cache
     try:
-        with open("archetypes.yaml", "r", encoding="utf-8") as f:
+        # Search for archetypes.yaml in various locations
+        # Priority: 1) next to exe, 2) in PyInstaller resources, 3) in project
+        archetypes_path = None
+        
+        # First search next to exe file (for editing)
+        base_dir = get_base_directory()
+        exe_local_path = os.path.join(base_dir, "archetypes.yaml")
+        if os.path.exists(exe_local_path):
+            archetypes_path = exe_local_path
+        else:
+            # Then search in PyInstaller resources
+            possible_paths = [
+                resource_path("archetypes.yaml"),  # In PyInstaller resources
+                "archetypes.yaml",  # Current directory
+                os.path.join(os.path.dirname(__file__), "..", "archetypes.yaml"),  # In project
+            ]
+            
+            for path in possible_paths:
+                if path and os.path.exists(path):
+                    archetypes_path = path
+                    break
+        
+        if not archetypes_path:
+            raise FileNotFoundError("archetypes.yaml not found. Make sure the file is next to the exe file or in the project.")
+        
+        with open(archetypes_path, "r", encoding="utf-8") as f:
             archetype_cache = yaml.safe_load(f)
         
-        # Для кожного архетипа будуємо повний промпт
+        # For each archetype, build full prompt
         for archetype_name, config in archetype_cache.items():
             if isinstance(config, dict):
-                # Будуємо багатоступінчастий промпт
+                # Build multi-stage prompt
                 full_prompt = build_multistage_prompt(config)
                 if full_prompt:
-                    config["_full_prompt"] = full_prompt  # Кешуємо зібраний промпт
+                    config["_full_prompt"] = full_prompt  # Cache built prompt
         
         print("--- Archetypes loaded successfully ---")
     except Exception as e:
@@ -152,7 +247,7 @@ def load_archetypes():
     return archetype_cache
 
 def log_interaction(archetype_name, user_text, final_prompt, response):
-    """Зберігає повну інформацію про взаємодію у файл."""
+    """Save full interaction information to file."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     safe_archetype = "".join(c for c in archetype_name if c.isalnum() or c in ('_', '-'))
     filename = os.path.join(HISTORY_DIR, f"{timestamp}_{safe_archetype}.json")
@@ -169,43 +264,51 @@ def log_interaction(archetype_name, user_text, final_prompt, response):
 
 def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     """
-    Формує промпт, підтягує релевантний контекст з векторної бази,
-    обирає потрібну модель Gemini, генерує відповідь і логує результат.
+    Form prompt, pull relevant context from vector database,
+    select appropriate model, generate response and log result.
     """
     if not text or not archetype_name:
-        return {"error": "Необхідно вказати текст і архетип."}
+        return {"error": "Text and archetype must be specified."}
 
     archetype_config = archetypes.get(archetype_name)
     if not archetype_config:
-        return {"error": f"Архетип '{archetype_name}' не знайдено."}
+        return {"error": f"Archetype '{archetype_name}' not found."}
 
     model_name = archetype_config.get("model_name")
     if not model_name:
-        return {"error": f"Для архетипа '{archetype_name}' не вказано model_name."}
+        return {"error": f"Model name not specified for archetype '{archetype_name}'."}
 
-    # Використовуємо зібраний багатоступінчастий промпт або збираємо на льоту
+    # Use assembled multi-stage prompt or assemble on the fly
     if "_full_prompt" in archetype_config:
         system_prompt = archetype_config["_full_prompt"]
     else:
-        # Якщо не був зібраний при завантаженні, збираємо зараз
+        # If not assembled during loading, assemble now
         system_prompt = build_multistage_prompt(archetype_config) or archetype_config.get("prompt", "")
 
-    # --- Додаємо релевантний контекст з векторної бази ---
+    # --- Add relevant context from vector database ---
     context = ""
     if search_chats:
         similar_chats = search_chats(text, n_results=2)
         if similar_chats:
-            context = "\n\n".join([f"Контекст з минулого чату:\n{c['text']}" for c in similar_chats])
+            context = "\n\n".join([f"Context from previous chat:\n{c['text']}" for c in similar_chats])
 
-    full_prompt = f"{system_prompt}\n\n{context}\n\nОсь запит користувача:\n{text}"
+    full_prompt = f"{system_prompt}\n\n{context}\n\nUser query:\n{text}"
 
     try:
-        model = genai.GenerativeModel(model_name)
-        gemini_response = model.generate_content(full_prompt)
-        model_response = gemini_response.text.strip()
+        # Normalize model name for current provider
+        provider = get_current_provider()
+        normalized_model = normalize_model_name(model_name, provider)
+        
+        # Generate response through current provider
+        model_response = generate_response(normalized_model, full_prompt)
         log_interaction(archetype_name, text, full_prompt, model_response)
         return {"response": model_response}
+    except ValueError as e:
+        error_message = f"Configuration error: {e}"
+        print(error_message)
+        return {"error": error_message}
     except Exception as e:
-        error_message = f"Помилка під час звернення до Google Gemini: {e}"
+        provider_name = get_current_provider().value
+        error_message = f"Error calling {provider_name}: {e}"
         print(error_message)
         return {"error": error_message}

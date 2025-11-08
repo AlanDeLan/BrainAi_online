@@ -3,22 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Gemini Brain</title>
+    <title>Local Brain</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="chat-container">
         <header>
-            <h1>Local Gemini Brain</h1>
+            <h1>Local Brain</h1>
             <div class="controls">
                 <select id="archetype">
                     {% for key, value in archetypes.items() %}
                         <option value="{{ key }}">{{ value.name }}</option>
                     {% endfor %}
+                    <option value="rada">РАДА</option>
                 </select>
                 <button id="new-chat-btn">Новий чат</button>
                 <button id="history-btn">Історія</button>
+            </div>
+            <div class="header-menu">
+                <button id="menu-btn" class="menu-btn">☰ Меню</button>
+                <div id="dropdown-menu" class="dropdown-menu hidden">
+                    <button id="config-btn">⚙️ Налаштування агентів</button>
+                    <button id="ai-provider-btn">🤖 AI Провайдер</button>
+                    <button id="vector-db-btn">📊 Векторна БД</button>
+                    <div class="dropdown-divider"></div>
+                    <button id="shutdown-btn" class="shutdown-btn-menu">⛔ Завершити сеанс</button>
+                </div>
             </div>
         </header>
         <div id="chat-window">
@@ -46,6 +57,76 @@
                 <div id="history-list-container" class="history-list"></div>
                 <div id="history-view-container" class="history-view">
                     <pre><code>Оберіть чат для перегляду...</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="config-modal" class="modal-overlay hidden">
+        <div class="modal-content config-modal-content">
+            <span class="close-btn config-close-btn">&times;</span>
+            <h2>Налаштування агентів</h2>
+            <div id="config-form-container">
+                <div id="config-loading" class="config-loading">Завантаження...</div>
+                <div id="config-form-wrapper" class="hidden">
+                    <div id="archetypes-list" class="archetypes-list"></div>
+                    <div class="config-actions">
+                        <button id="add-archetype-btn" class="config-btn-add">+ Додати агента</button>
+                        <button id="save-config-btn" class="config-btn-save">Зберегти конфігурацію</button>
+                    </div>
+                    <div id="config-message" class="config-message"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ai-provider-modal" class="modal-overlay hidden">
+        <div class="modal-content config-modal-content">
+            <span class="close-btn ai-provider-close-btn">&times;</span>
+            <h2>Налаштування AI Провайдера</h2>
+            <div id="ai-provider-form-container">
+                <div id="ai-provider-loading" class="config-loading">Завантаження...</div>
+                <div id="ai-provider-form-wrapper" class="hidden">
+                    <div class="archetype-form-group">
+                        <label>Провайдер:</label>
+                        <select id="ai-provider-select">
+                            <option value="google_ai">Google AI Studio</option>
+                            <option value="openai">OpenAI API</option>
+                        </select>
+                    </div>
+                    <div class="archetype-form-group">
+                        <label>Google API Key:</label>
+                        <input type="password" id="google-api-key" placeholder="Введіть Google API ключ">
+                    </div>
+                    <div class="archetype-form-group">
+                        <label>OpenAI API Key:</label>
+                        <input type="password" id="openai-api-key" placeholder="Введіть OpenAI API ключ">
+                    </div>
+                    <div class="archetype-form-group">
+                        <label>OpenAI Base URL (опціонально):</label>
+                        <input type="text" id="openai-base-url" placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1">
+                    </div>
+                    <div id="ai-provider-models" class="ai-provider-models"></div>
+                    <div class="config-actions">
+                        <button id="save-ai-provider-btn" class="config-btn-save">Зберегти налаштування</button>
+                    </div>
+                    <div id="ai-provider-message" class="config-message"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="vector-db-modal" class="modal-overlay hidden">
+        <div class="modal-content config-modal-content" style="max-width: 90%; max-height: 90vh;">
+            <span class="close-btn vector-db-close-btn">&times;</span>
+            <h2>Векторна База Даних</h2>
+            <div id="vector-db-container">
+                <div id="vector-db-loading" class="config-loading">Завантаження...</div>
+                <div id="vector-db-wrapper" class="hidden">
+                    <div id="vector-db-entries-list" class="vector-db-entries-list"></div>
+                    <div id="vector-db-entry-view" class="vector-db-entry-view">
+                        <pre><code>Оберіть запис для перегляду...</code></pre>
+                    </div>
                 </div>
             </div>
         </div>
