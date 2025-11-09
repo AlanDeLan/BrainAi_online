@@ -21,6 +21,14 @@ if os.path.exists('prompts'):
 if os.path.exists('archetypes.yaml'):
     datas += [('archetypes.yaml', '.')]
 
+# Add translations folder
+if os.path.exists('core/translations'):
+    datas += [('core/translations', 'core/translations')]
+
+# Add config.yaml if exists
+if os.path.exists('config.yaml'):
+    datas += [('config.yaml', '.')]
+
 # Add hidden imports
 hiddenimports = [
     'uvicorn',
@@ -45,6 +53,12 @@ hiddenimports = [
     'dotenv',
     'core.ai_providers',
     'core.logic',
+    'core.logger',
+    'core.i18n',
+    'core.monitoring',
+    'core.config',
+    'core.validation',
+    'core.port_manager',
     'conferences.rada',
     'vector_db.client',
 ]
@@ -87,3 +101,11 @@ exe = EXE(
     entitlements_file=None,
     icon=None,  # Can add icon: icon='static/favicon.ico'
 )
+
+# Optimize build
+# Remove unnecessary files to reduce size
+# Note: UPX compression is enabled above, which helps reduce exe size
+# For further optimization, consider:
+# - Using --onefile mode (already used)
+# - Excluding unused modules
+# - Using --strip option (already enabled via strip=False, but can be enabled if needed)

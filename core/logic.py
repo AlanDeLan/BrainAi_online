@@ -14,6 +14,10 @@ from core.ai_providers import (
     AIProvider
 )
 
+# --- Import logging and validation ---
+from core.logger import logger
+from core.validation import validate_archetypes_yaml, validate_archetypes_config
+
 # --- Function for correct resource handling in PyInstaller ---
 def resource_path(relative_path):
     """Get correct path to resources for PyInstaller."""
@@ -87,20 +91,20 @@ try:
     if provider == AIProvider.GOOGLE_AI:
         api_key = provider_config.get('google_api_key')
         if not api_key:
-            print(f"--- WARNING: GOOGLE_API_KEY not found. Check .env file ---")
+            logger.warning("GOOGLE_API_KEY not found. Check .env file")
         else:
-            print(f"--- Google AI Client Configured Successfully ---")
+            logger.info("Google AI Client Configured Successfully")
     elif provider == AIProvider.OPENAI:
         api_key = provider_config.get('openai_api_key')
         if not api_key:
-            print(f"--- WARNING: OPENAI_API_KEY not found. Check .env file ---")
+            logger.warning("OPENAI_API_KEY not found. Check .env file")
         else:
-            print(f"--- OpenAI Client Configured Successfully ---")
+            logger.info("OpenAI Client Configured Successfully")
     else:
-        print(f"--- AI Provider: {provider_name} ---")
+        logger.info(f"AI Provider: {provider_name}")
         
 except Exception as e:
-    print(f"--- CRITICAL: Failed to configure AI provider! Error: {e} ---")
+    logger.critical(f"Failed to configure AI provider! Error: {e}", exc_info=True)
 
 # For history, use directory next to exe file (not in _MEIPASS)
 if hasattr(sys, '_MEIPASS'):
@@ -145,11 +149,13 @@ def load_prompt_file(file_path):
             if path and os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
                     content = f.read().strip()
+                    logger.debug(f"Loaded prompt file: {path} ({len(content)} chars)")
                     return content
         
+        logger.warning(f"Prompt file not found: {file_path}")
         return None
     except Exception as e:
-        print(f"--- Warning: Failed to load prompt file '{file_path}': {e} ---")
+        logger.warning(f"Failed to load prompt file '{file_path}': {e}", exc_info=True)
         return None
 
 def build_multistage_prompt(archetype_config):
@@ -199,7 +205,7 @@ def build_multistage_prompt(archetype_config):
     return "\n\n".join(filter(None, prompt_parts))
 
 def load_archetypes():
-    """Load archetypes from YAML file with caching."""
+    """Load archetypes from YAML file with caching and validation."""
     global archetype_cache
     if archetype_cache is not None:
         return archetype_cache
@@ -227,10 +233,30 @@ def load_archetypes():
                     break
         
         if not archetypes_path:
-            raise FileNotFoundError("archetypes.yaml not found. Make sure the file is next to the exe file or in the project.")
+            error_msg = "archetypes.yaml not found. Make sure the file is next to the exe file or in the project."
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        # Validate YAML file
+        is_valid, errors, warnings = validate_archetypes_yaml(archetypes_path)
+        if not is_valid:
+            error_msg = f"Validation failed for archetypes.yaml: {', '.join(errors)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if warnings:
+            for warning in warnings:
+                logger.warning(f"archetypes.yaml: {warning}")
         
         with open(archetypes_path, "r", encoding="utf-8") as f:
             archetype_cache = yaml.safe_load(f)
+        
+        # Validate configuration structure
+        config_valid, config_errors = validate_archetypes_config(archetype_cache)
+        if not config_valid:
+            error_msg = f"Configuration validation failed: {', '.join(config_errors)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         # For each archetype, build full prompt
         for archetype_name, config in archetype_cache.items():
@@ -239,44 +265,65 @@ def load_archetypes():
                 full_prompt = build_multistage_prompt(config)
                 if full_prompt:
                     config["_full_prompt"] = full_prompt  # Cache built prompt
+                    logger.debug(f"Built prompt for archetype '{archetype_name}' ({len(full_prompt)} chars)")
         
-        print("--- Archetypes loaded successfully ---")
-    except Exception as e:
-        print(f"--- CRITICAL: Failed to load archetypes! Error: {e} ---")
+        logger.info(f"Archetypes loaded successfully: {len(archetype_cache)} archetypes")
+    except FileNotFoundError:
+        logger.error("archetypes.yaml not found", exc_info=True)
         archetype_cache = {}
+        raise
+    except (yaml.YAMLError, ValueError) as e:
+        logger.error(f"Failed to load archetypes: {e}", exc_info=True)
+        archetype_cache = {}
+        raise
+    except Exception as e:
+        logger.critical(f"Unexpected error loading archetypes: {e}", exc_info=True)
+        archetype_cache = {}
+        raise
     return archetype_cache
 
 def log_interaction(archetype_name, user_text, final_prompt, response):
     """Save full interaction information to file."""
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    safe_archetype = "".join(c for c in archetype_name if c.isalnum() or c in ('_', '-'))
-    filename = os.path.join(HISTORY_DIR, f"{timestamp}_{safe_archetype}.json")
-    log_data = {
-        "timestamp": timestamp,
-        "archetype": archetype_name,
-        "user_input": user_text,
-        "full_prompt_sent_to_model": final_prompt,
-        "model_response": response,
-    }
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(log_data, f, ensure_ascii=False, indent=4)
-    print(f"--- Interaction saved to {filename} ---")
+    try:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        safe_archetype = "".join(c for c in archetype_name if c.isalnum() or c in ('_', '-'))
+        filename = os.path.join(HISTORY_DIR, f"{timestamp}_{safe_archetype}.json")
+        log_data = {
+            "timestamp": timestamp,
+            "archetype": archetype_name,
+            "user_input": user_text,
+            "full_prompt_sent_to_model": final_prompt,
+            "model_response": response,
+        }
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, ensure_ascii=False, indent=4)
+        logger.debug(f"Interaction saved to {filename}")
+    except Exception as e:
+        logger.error(f"Failed to save interaction log: {e}", exc_info=True)
 
 def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     """
     Form prompt, pull relevant context from vector database,
     select appropriate model, generate response and log result.
     """
+    logger.debug(f"Processing request for archetype '{archetype_name}'")
+    
     if not text or not archetype_name:
-        return {"error": "Text and archetype must be specified."}
+        error_msg = "Text and archetype must be specified."
+        logger.warning(error_msg)
+        return {"error": error_msg}
 
     archetype_config = archetypes.get(archetype_name)
     if not archetype_config:
-        return {"error": f"Archetype '{archetype_name}' not found."}
+        error_msg = f"Archetype '{archetype_name}' not found."
+        logger.warning(error_msg)
+        return {"error": error_msg}
 
     model_name = archetype_config.get("model_name")
     if not model_name:
-        return {"error": f"Model name not specified for archetype '{archetype_name}'."}
+        error_msg = f"Model name not specified for archetype '{archetype_name}'."
+        logger.error(error_msg)
+        return {"error": error_msg}
 
     # Use assembled multi-stage prompt or assemble on the fly
     if "_full_prompt" in archetype_config:
@@ -288,27 +335,35 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
     # --- Add relevant context from vector database ---
     context = ""
     if search_chats:
-        similar_chats = search_chats(text, n_results=2)
-        if similar_chats:
-            context = "\n\n".join([f"Context from previous chat:\n{c['text']}" for c in similar_chats])
+        try:
+            similar_chats = search_chats(text, n_results=2)
+            if similar_chats:
+                context = "\n\n".join([f"Context from previous chat:\n{c['text']}" for c in similar_chats])
+                logger.debug(f"Found {len(similar_chats)} similar chats for context")
+        except Exception as e:
+            logger.warning(f"Failed to search vector database for context: {e}")
 
     full_prompt = f"{system_prompt}\n\n{context}\n\nUser query:\n{text}"
+    logger.debug(f"Full prompt length: {len(full_prompt)} characters")
 
     try:
         # Normalize model name for current provider
         provider = get_current_provider()
         normalized_model = normalize_model_name(model_name, provider)
+        logger.debug(f"Using model: {normalized_model} (provider: {provider.value})")
         
         # Generate response through current provider
         model_response = generate_response(normalized_model, full_prompt)
-        log_interaction(archetype_name, text, full_prompt, model_response)
+        logger.info(f"Successfully generated response for archetype '{archetype_name}' ({len(model_response)} chars)")
+        # Note: Interaction logging is handled in main.py to avoid duplicate files
+        # log_interaction is kept for backward compatibility but not called here
         return {"response": model_response}
     except ValueError as e:
         error_message = f"Configuration error: {e}"
-        print(error_message)
+        logger.error(error_message, exc_info=True)
         return {"error": error_message}
     except Exception as e:
         provider_name = get_current_provider().value
         error_message = f"Error calling {provider_name}: {e}"
-        print(error_message)
+        logger.error(error_message, exc_info=True)
         return {"error": error_message}

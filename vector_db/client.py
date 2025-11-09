@@ -3,6 +3,17 @@ import sys
 import chromadb
 from chromadb.config import Settings
 
+# Lazy import logger to avoid circular imports
+def get_logger():
+    """Get logger instance (lazy import)."""
+    try:
+        from core.logger import logger
+        return logger
+    except ImportError:
+        # Fallback if logger is not available
+        import logging
+        return logging.getLogger("local_brain")
+
 # --- Функція для коректної роботи з ресурсами у PyInstaller ---
 def get_base_dir():
     """Отримує базову директорію для збереження даних."""
@@ -19,29 +30,42 @@ def get_base_dir():
         return os.getcwd()
 
 # Ініціалізація клієнта ChromaDB з локальним збереженням
-vector_db_dir = os.path.join(get_base_dir(), "vector_db_storage")
-os.makedirs(vector_db_dir, exist_ok=True)
-client = chromadb.Client(Settings(persist_directory=vector_db_dir))
-
-# Колекція для збереження чатів
-collection = client.get_or_create_collection("chat_memory")
+try:
+    logger = get_logger()
+    vector_db_dir = os.path.join(get_base_dir(), "vector_db_storage")
+    os.makedirs(vector_db_dir, exist_ok=True)
+    client = chromadb.Client(Settings(persist_directory=vector_db_dir))
+    
+    # Колекція для збереження чатів
+    collection = client.get_or_create_collection("chat_memory")
+    logger.info(f"ChromaDB initialized at {vector_db_dir}")
+except Exception as e:
+    logger = get_logger()
+    logger.error(f"Failed to initialize ChromaDB: {e}", exc_info=True)
+    raise
 
 def save_chat(chat_id, chat_text, archetypes, timestamp, topic=None):
     """
     Зберігає чат як один документ у векторній базі.
     archetypes: список архетипів (list) -> треба перетворити на str!
     """
-    metadata = {
-        "chat_id": chat_id,
-        "archetypes": ", ".join(archetypes) if isinstance(archetypes, list) else str(archetypes),
-        "timestamp": timestamp,
-        "topic": topic or ""
-    }
-    collection.add(
-        documents=[chat_text],
-        metadatas=[metadata],
-        ids=[str(chat_id)]
-    )
+    logger = get_logger()
+    try:
+        metadata = {
+            "chat_id": chat_id,
+            "archetypes": ", ".join(archetypes) if isinstance(archetypes, list) else str(archetypes),
+            "timestamp": timestamp,
+            "topic": topic or ""
+        }
+        collection.add(
+            documents=[chat_text],
+            metadatas=[metadata],
+            ids=[str(chat_id)]
+        )
+        logger.debug(f"Chat saved to vector database: {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to save chat to vector database: {e}", exc_info=True)
+        raise
 
 def search_chats(query, n_results=3):
     """
@@ -49,45 +73,64 @@ def search_chats(query, n_results=3):
     query: текст для пошуку (str)
     n_results: кількість результатів (int)
     """
-    results = collection.query(
-        query_texts=[query],
-        n_results=n_results
-    )
-    chats = []
-    for i in range(len(results["ids"][0])):
-        chats.append({
-            "chat_id": results["metadatas"][0][i].get("chat_id"),
-            "archetypes": results["metadatas"][0][i].get("archetypes"),
-            "timestamp": results["metadatas"][0][i].get("timestamp"),
-            "topic": results["metadatas"][0][i].get("topic"),
-            "text": results["documents"][0][i],
-            "score": results["distances"][0][i]
-        })
-    return chats
+    logger = get_logger()
+    try:
+        results = collection.query(
+            query_texts=[query],
+            n_results=n_results
+        )
+        chats = []
+        for i in range(len(results["ids"][0])):
+            chats.append({
+                "chat_id": results["metadatas"][0][i].get("chat_id"),
+                "archetypes": results["metadatas"][0][i].get("archetypes"),
+                "timestamp": results["metadatas"][0][i].get("timestamp"),
+                "topic": results["metadatas"][0][i].get("topic"),
+                "text": results["documents"][0][i],
+                "score": results["distances"][0][i]
+            })
+        logger.debug(f"Found {len(chats)} chats for query: {query[:50]}")
+        return chats
+    except Exception as e:
+        logger.error(f"Failed to search chats in vector database: {e}", exc_info=True)
+        return []
 
 def delete_chat(chat_id):
     """Видаляє чат з векторної бази за chat_id."""
-    collection.delete(ids=[str(chat_id)])
+    logger = get_logger()
+    try:
+        collection.delete(ids=[str(chat_id)])
+        logger.info(f"Chat deleted from vector database: {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to delete chat from vector database: {e}", exc_info=True)
+        raise
 
 def update_chat(chat_id, chat_text, metadata=None):
     """
     Оновлює чат у векторній базі даних.
     Якщо запис не існує, створює новий.
     """
+    logger = get_logger()
     if metadata is None:
         metadata = {}
     
-    # Спробуємо оновити існуючий запис
     try:
-        collection.update(
-            ids=[str(chat_id)],
-            documents=[chat_text],
-            metadatas=[metadata]
-        )
-    except Exception:
-        # Якщо запис не існує, створюємо новий
-        collection.add(
-            documents=[chat_text],
-            metadatas=[metadata],
-            ids=[str(chat_id)]
-        )
+        # Спробуємо оновити існуючий запис
+        try:
+            collection.update(
+                ids=[str(chat_id)],
+                documents=[chat_text],
+                metadatas=[metadata]
+            )
+            logger.debug(f"Chat updated in vector database: {chat_id}")
+        except Exception:
+            # Якщо запис не існує, створюємо новий
+            collection.add(
+                documents=[chat_text],
+                metadatas=[metadata],
+                ids=[str(chat_id)]
+            )
+            logger.debug(f"Chat created in vector database: {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to update chat in vector database: {e}", exc_info=True)
+        raise

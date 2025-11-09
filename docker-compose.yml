@@ -1,15 +1,18 @@
-# Docker Compose для Local Gemini Brain
+# Docker Compose для Local Brain
 # Використання: docker-compose up
 
 version: '3.8'
 
 services:
-  local-gemini:
+  local-brain:
     build: .
     ports:
       - "8000:8000"
     environment:
+      - AI_PROVIDER=${AI_PROVIDER:-google_ai}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
     volumes:
       # Зберігаємо історію та конфігурацію
       - ./history:/app/history
@@ -17,6 +20,9 @@ services:
       - ./prompts:/app/prompts
       - ./vector_db_storage:/app/vector_db_storage
     restart: unless-stopped
+
+
+
 
 
 

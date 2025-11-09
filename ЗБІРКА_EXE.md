@@ -24,7 +24,7 @@ pyinstaller run_app.spec --clean
 ```
 
 ### Крок 3: Готово!
-Файл буде в `dist/LocalGeminiBrain.exe`
+Файл буде в `dist/LocalBrain.exe`
 
 ---
 
@@ -93,6 +93,9 @@ GOOGLE_API_KEY=ваш_ключ_від_google
 ---
 
 **Готово до збірки! Запустіть `.\build_exe.ps1`**
+
+
+
 
 
 

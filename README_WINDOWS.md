@@ -1,4 +1,4 @@
-# Local Gemini Brain - Инструкция для Windows 11
+# Local Brain - Инструкция для Windows 11
 
 ## Быстрый запуск
 
@@ -161,7 +161,8 @@ local_gemini/
 │   ├── sofiya_context_instructions.txt
 │   └── ...
 ├── main.py             # Главный файл FastAPI приложения
-├── run_app.py          # Альтернативный скрипт запуска (кроссплатформенный)
+├── run_app.py          # Альтернативный скрипт запуска (кроссплатформенный, опционально)
+├── run_app_exe.py      # Точка входа для PyInstaller (exe версия)
 ├── start_server.ps1    # PowerShell скрипт для Windows
 ├── requirements.txt    # Зависимости Python
 ├── archetypes.yaml     # Конфигурация архетипов

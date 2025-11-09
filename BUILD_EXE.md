@@ -24,7 +24,7 @@ pip install pyinstaller
 # 2. Зібрати exe
 pyinstaller run_app.spec --clean
 
-# 3. Результат буде в dist/LocalGeminiBrain.exe
+# 3. Результат буде в dist/LocalBrain.exe
 ```
 
 ---
@@ -50,19 +50,27 @@ pip install -r requirements.txt
 
 ### 1. Створіть папку для розповсюдження:
 ```
-LocalGeminiBrain/
-├── LocalGeminiBrain.exe
+LocalBrain/
+├── LocalBrain.exe
 ├── .env (створіть вручну)
+├── archetypes.yaml (опціонально)
+├── prompts/ (опціонально)
 └── history/ (створиться автоматично)
 ```
 
 ### 2. Створіть файл `.env`:
 ```
+AI_PROVIDER=google_ai
 GOOGLE_API_KEY=ваш_ключ_від_google
+```
+Або для OpenAI:
+```
+AI_PROVIDER=openai
+OPENAI_API_KEY=ваш_ключ_від_openai
 ```
 
 ### 3. Запустіть програму:
-Подвійний клік на `LocalGeminiBrain.exe`
+Подвійний клік на `LocalBrain.exe`
 
 ---
 
@@ -71,7 +79,7 @@ GOOGLE_API_KEY=ваш_ключ_від_google
 ### Змінити назву exe файлу:
 Відредагуйте `run_app.spec`:
 ```python
-name='ВашаНазва',  # Замість 'LocalGeminiBrain'
+name='ВашаНазва',  # Замість 'LocalBrain'
 ```
 
 ### Додати іконку:
@@ -136,14 +144,14 @@ hiddenimports=['chromadb', 'chromadb.config', ...]
 Після збірки ви отримаєте:
 ```
 dist/
-└── LocalGeminiBrain.exe  (standalone файл, ~100-200 MB)
+└── LocalBrain.exe  (standalone файл, ~50-100 MB)
 ```
 
 Або (якщо використати `--onedir`):
 ```
 dist/
-└── LocalGeminiBrain/
-    ├── LocalGeminiBrain.exe
+└── LocalBrain/
+    ├── LocalBrain.exe
     └── _internal/  (бібліотеки)
 ```
 
@@ -162,7 +170,7 @@ dist/
 ```
 
 ### 2. Тестування на іншому комп'ютері:
-1. Скопіюйте `LocalGeminiBrain.exe` та `.env` файл
+1. Скопіюйте `LocalBrain.exe` та `.env` файл
 2. Запустіть на чистому Windows (без Python)
 3. Перевірте всі функції
 
@@ -172,9 +180,9 @@ dist/
 
 ### Мінімальний набір файлів:
 ```
-LocalGeminiBrain.exe
-.env (з GOOGLE_API_KEY)
-README.txt (інструкція для користувача)
+LocalBrain.exe
+.env (з AI_PROVIDER та API ключем)
+README_EXE.txt (інструкція для користувача)
 ```
 
 ### Опціонально:
@@ -200,6 +208,9 @@ README.txt (інструкція для користувача)
 - `PACKAGING_OPTIONS.md` - всі варіанти упаковки
 - `BUILD.md` - загальні інструкції зі збірки
 - [PyInstaller документація](https://pyinstaller.org/)
+
+
+
 
 
 

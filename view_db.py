@@ -14,7 +14,7 @@ if sys.platform == 'win32':
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 print("=" * 60)
-print("Перегляд бази даних Local Gemini Brain")
+print("Перегляд бази даних Local Brain")
 print("=" * 60)
 
 # 1. Перегляд історії (JSON файли)
