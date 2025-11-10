@@ -17,6 +17,10 @@ class AIProvider(Enum):
 _current_provider: Optional[AIProvider] = None
 _provider_config: Dict[str, Any] = {}
 
+# Global dictionary to store ChatSession objects by chat_id
+# Format: {(chat_id, model_name): ChatSession}
+_google_ai_chat_sessions: Dict[tuple, Any] = {}
+
 def get_base_directory():
     """Get base directory for searching configuration."""
     if hasattr(sys, '_MEIPASS'):
@@ -102,13 +106,18 @@ def set_provider(provider: AIProvider, config: Optional[Dict[str, Any]] = None):
     if config:
         _provider_config.update(config)
 
-def generate_response(model_name: str, prompt: str, **kwargs) -> str:
+def generate_response(model_name: str, system_prompt: str = None, user_message: str = None, context: str = None, conversation_history: list = None, prompt: str = None, chat_id: str = None, **kwargs) -> str:
     """
     Generate response through current AI provider.
     
     Args:
         model_name: Model name (depends on provider)
-        prompt: Prompt text
+        system_prompt: System prompt/instructions
+        user_message: Current user message
+        context: Additional context (e.g., from vector DB)
+        conversation_history: List of previous messages (deprecated - use chat_id for session reuse)
+        prompt: Legacy parameter - full prompt text (used if system_prompt/user_message not provided)
+        chat_id: Unique chat ID for session reuse (Google AI ChatSession will be reused for same chat_id)
         **kwargs: Additional parameters
     
     Returns:
@@ -118,15 +127,22 @@ def generate_response(model_name: str, prompt: str, **kwargs) -> str:
     config = get_provider_config()
     
     if provider == AIProvider.GOOGLE_AI:
-        return _generate_google_ai(model_name, prompt, config, **kwargs)
+        return _generate_google_ai(model_name, system_prompt=system_prompt, user_message=user_message, context=context, conversation_history=conversation_history, prompt=prompt, chat_id=chat_id, config=config, **kwargs)
     elif provider == AIProvider.OPENAI:
-        return _generate_openai(model_name, prompt, config, **kwargs)
+        return _generate_openai(model_name, system_prompt=system_prompt, user_message=user_message, context=context, conversation_history=conversation_history, prompt=prompt, chat_id=chat_id, config=config, **kwargs)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
-def _generate_google_ai(model_name: str, prompt: str, config: Dict[str, Any], **kwargs) -> str:
-    """Generate response through Google AI."""
+def _generate_google_ai(model_name: str, system_prompt: str = None, user_message: str = None, context: str = None, conversation_history: list = None, prompt: str = None, chat_id: str = None, config: Dict[str, Any] = None, **kwargs) -> str:
+    """
+    Generate response through Google AI with ChatSession reuse.
+    
+    If chat_id is provided, reuses the same ChatSession for all messages in that chat.
+    ChatSession automatically maintains conversation history, so we don't need to pass
+    the entire history each time - this prevents token explosion.
+    """
     import google.generativeai as genai
+    global _google_ai_chat_sessions
     
     api_key = config.get('google_api_key')
     if not api_key:
@@ -135,15 +151,122 @@ def _generate_google_ai(model_name: str, prompt: str, config: Dict[str, Any], **
     # Configure API key
     genai.configure(api_key=api_key)
     
-    # Create model
-    model = genai.GenerativeModel(model_name)
+    # Get generation config parameters
+    generation_config = {
+        'temperature': kwargs.get('temperature', 0.7),
+        'max_output_tokens': kwargs.get('max_tokens', 2000),
+    }
     
-    # Generate response
-    response = model.generate_content(prompt)
+    # Add top_p and top_k if provided (Google AI supports these)
+    if 'top_p' in kwargs:
+        generation_config['top_p'] = kwargs['top_p']
+    if 'top_k' in kwargs:
+        generation_config['top_k'] = kwargs['top_k']
+    
+    # Build current message with context if available
+    current_message = user_message if user_message else prompt
+    if context:
+        current_message = f"{context}\n\n{current_message}" if current_message else context
+    
+    # If chat_id is provided, reuse or create ChatSession
+    if chat_id:
+        # Create unique key: (chat_id, model_name, system_prompt_hash)
+        # Different system prompts need different sessions
+        system_prompt_hash = hash(system_prompt) if system_prompt else None
+        session_key = (chat_id, model_name, system_prompt_hash)
+        
+        # Check if we have existing ChatSession
+        if session_key in _google_ai_chat_sessions:
+            # Reuse existing ChatSession - it automatically maintains history
+            chat = _google_ai_chat_sessions[session_key]
+            response = chat.send_message(
+                current_message,
+                generation_config=genai.types.GenerationConfig(**generation_config)
+            )
+        else:
+            # Create new ChatSession
+            # If we have conversation_history, initialize with it (for first message in chat)
+            model = genai.GenerativeModel(
+                model_name,
+                system_instruction=system_prompt if system_prompt else None
+            )
+            
+            if conversation_history and len(conversation_history) > 0:
+                # Convert conversation_history to Google AI format
+                history = []
+                for msg in conversation_history:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        history.append({"role": "user", "parts": [content]})
+                    elif role == "model":
+                        history.append({"role": "model", "parts": [content]})
+                chat = model.start_chat(history=history)
+            else:
+                # Start empty chat
+                chat = model.start_chat(history=[])
+            
+            # Store ChatSession for reuse
+            _google_ai_chat_sessions[session_key] = chat
+            
+            # Send message
+            response = chat.send_message(
+                current_message,
+                generation_config=genai.types.GenerationConfig(**generation_config)
+            )
+    else:
+        # No chat_id - use stateless approach
+        model = genai.GenerativeModel(
+            model_name,
+            system_instruction=system_prompt if system_prompt else None
+        )
+        
+        # If we have conversation history, use ChatSession for context (one-time)
+        if conversation_history and len(conversation_history) > 0:
+            # Convert conversation_history to Google AI format
+            history = []
+            for msg in conversation_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "user":
+                    history.append({"role": "user", "parts": [content]})
+                elif role == "model":
+                    history.append({"role": "model", "parts": [content]})
+            
+            chat = model.start_chat(history=history)
+            response = chat.send_message(
+                current_message,
+                generation_config=genai.types.GenerationConfig(**generation_config)
+            )
+        else:
+            # No history - use simple generate_content
+            if prompt:
+                full_prompt = prompt
+            else:
+                parts = []
+                if system_prompt:
+                    parts.append(system_prompt)
+                if context:
+                    parts.append(context)
+                if user_message:
+                    parts.append(user_message)
+                full_prompt = "\n\n".join(parts) if parts else ""
+            
+            response = model.generate_content(
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(**generation_config)
+            )
+    
     return response.text.strip()
 
-def _generate_openai(model_name: str, prompt: str, config: Dict[str, Any], **kwargs) -> str:
-    """Generate response through OpenAI API."""
+def _generate_openai(model_name: str, system_prompt: str = None, user_message: str = None, context: str = None, conversation_history: list = None, prompt: str = None, chat_id: str = None, config: Dict[str, Any] = None, **kwargs) -> str:
+    """
+    Generate response through OpenAI API with conversation history support.
+    
+    Note: OpenAI doesn't have persistent ChatSession like Google AI, so we still
+    need to pass conversation_history each time. However, chat_id can be used
+    for caching or other optimizations in the future.
+    """
     try:
         from openai import OpenAI
     except ImportError:
@@ -158,16 +281,44 @@ def _generate_openai(model_name: str, prompt: str, config: Dict[str, Any], **kwa
     # Create client
     client = OpenAI(api_key=api_key, base_url=base_url)
     
+    # Build messages array
+    messages = []
+    
+    # Add system message
+    system_content = system_prompt if system_prompt else "You are a helpful assistant."
+    if context:
+        system_content = f"{system_content}\n\nContext: {context}"
+    messages.append({"role": "system", "content": system_content})
+    
+    # Add conversation history
+    if conversation_history:
+        for msg in conversation_history:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            # OpenAI uses "assistant" instead of "model"
+            if role == "model":
+                role = "assistant"
+            messages.append({"role": role, "content": content})
+    
+    # Add current user message
+    current_message = user_message if user_message else prompt
+    if current_message:
+        messages.append({"role": "user", "content": current_message})
+    
+    # Prepare generation parameters
+    generation_params = {
+        'model': model_name,
+        'messages': messages,
+        'temperature': kwargs.get('temperature', 0.7),
+        'max_tokens': kwargs.get('max_tokens', 2000),
+    }
+    
+    # Add top_p if provided (OpenAI supports top_p)
+    if 'top_p' in kwargs:
+        generation_params['top_p'] = kwargs['top_p']
+    
     # Generate response
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=kwargs.get('temperature', 0.7),
-        max_tokens=kwargs.get('max_tokens', 2000),
-    )
+    response = client.chat.completions.create(**generation_params)
     
     return response.choices[0].message.content.strip()
 

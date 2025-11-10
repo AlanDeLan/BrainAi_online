@@ -15,6 +15,8 @@ sofiya:
   description: Творчий генератор ідей
   model_name: gemini-2.5-flash
   role: creative_generator
+  temperature: 1
+  top_p: 0.15
   prompt_file: prompts/sofiya_base.txt
   additional_prompts:
   - prompts/sofiya_context_instructions.txt

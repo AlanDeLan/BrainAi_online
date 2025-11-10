@@ -58,6 +58,7 @@ header h1, .modal-content h2 {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    font-size: 0.875em; /* Розмір шрифту чату: 14px */
 }
 
 .message {
@@ -106,7 +107,7 @@ footer {
 #chat-form label,
 #remember-chat-toggle + span,
 label[for="remember-chat-toggle"] {
-    font-size: 0.85em;
+    font-size: 0.8em; /* Зменшено з 0.85em на 1 пункт */
 }
 
 #archetype {

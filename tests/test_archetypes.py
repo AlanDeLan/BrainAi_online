@@ -48,3 +48,7 @@ def test_reload_archetypes():
         # Expected if archetypes.yaml doesn't exist in test environment
         pass
 
+
+
+
+

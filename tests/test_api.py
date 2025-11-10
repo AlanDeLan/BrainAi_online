@@ -59,3 +59,7 @@ def test_get_supported_models():
     assert response.status_code == 200
     assert "models" in response.json()
 
+
+
+
+

@@ -132,10 +132,45 @@ async def process_text(request: Request):
                 increment_counter("api_errors")
                 raise HTTPException(status_code=400, detail=error_msg)
             
+            # Get model parameters from request (if provided)
+            model_params = {}
+            if 'temperature' in data:
+                model_params['temperature'] = float(data['temperature'])
+            if 'max_tokens' in data:
+                model_params['max_tokens'] = int(data['max_tokens'])
+            if 'top_p' in data:
+                model_params['top_p'] = float(data['top_p'])
+            if 'top_k' in data:
+                model_params['top_k'] = int(data['top_k'])
+            
+            # --- Load chat history BEFORE processing (for context) ---
+            chat_history = []
+            if remember and chat_id:
+                try:
+                    filepath = get_chat_file(chat_id)
+                    if os.path.exists(filepath):
+                        try:
+                            async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
+                                content = await f.read()
+                                try:
+                                    chat_history = json.loads(content)
+                                except json.JSONDecodeError as e:
+                                    logger.warning(f"Failed to parse history file {filepath}: {e}, using empty history")
+                                    chat_history = []
+                        except Exception as e:
+                            logger.warning(f"Failed to read history file {filepath}: {e}, using empty history")
+                            chat_history = []
+                except Exception as e:
+                    logger.warning(f"Error loading chat history: {e}, using empty history")
+                    chat_history = []
+            
             result = process_with_archetype(
                 text=text,
                 archetype_name=archetype,
-                archetypes=archetypes
+                archetypes=archetypes,
+                chat_history=chat_history,
+                chat_id=chat_id if remember else None,
+                **model_params
             )
             
             if "error" in result:
@@ -147,22 +182,24 @@ async def process_text(request: Request):
             if remember and chat_id:
                 try:
                     filepath = get_chat_file(chat_id)
-                    if os.path.exists(filepath):
-                        try:
-                            async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
-                                content = await f.read()
-                                try:
-                                    history = json.loads(content)
-                                except json.JSONDecodeError as e:
-                                    logger.warning(f"Failed to parse history file {filepath}: {e}, creating new history")
-                                    history = []
-                        except Exception as e:
-                            logger.warning(f"Failed to read history file {filepath}: {e}, creating new history")
-                            history = []
-                    else:
-                        history = []
+                    # Use chat_history we already loaded (or create new if not loaded)
+                    if not chat_history:
+                        # If chat_history wasn't loaded (e.g., remember=False initially), load it now
+                        if os.path.exists(filepath):
+                            try:
+                                async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
+                                    content = await f.read()
+                                    try:
+                                        chat_history = json.loads(content)
+                                    except json.JSONDecodeError as e:
+                                        logger.warning(f"Failed to parse history file {filepath}: {e}, creating new history")
+                                        chat_history = []
+                            except Exception as e:
+                                logger.warning(f"Failed to read history file {filepath}: {e}, creating new history")
+                                chat_history = []
                     
-                    history.append({
+                    # Append new message to history
+                    chat_history.append({
                         "user_input": text,
                         "archetype": archetype,
                         "model_response": result.get("response", "")
@@ -170,43 +207,44 @@ async def process_text(request: Request):
                     
                     try:
                         async with aiofiles.open(filepath, "w", encoding="utf-8") as f:
-                            await f.write(json.dumps(history, ensure_ascii=False, indent=2))
+                            await f.write(json.dumps(chat_history, ensure_ascii=False, indent=2))
                         logger.debug(f"Chat history saved to {filepath}")
                     except Exception as e:
                         logger.error(f"Failed to save chat history to {filepath}: {e}", exc_info=True)
                         # Don't fail the request if history save fails
                     
-                    # --- Save to vector database ---
+                    # --- Save to vector database (save each message separately) ---
                     try:
-                        from vector_db.client import update_chat
+                        from vector_db.client import save_message
                         import datetime
                         
-                        # Prepare chat text for vector database
-                        chat_text_parts = []
-                        for msg in history:
-                            chat_text_parts.append(f"User: {msg.get('user_input', '')}")
-                            chat_text_parts.append(f"{msg.get('archetype', 'Assistant')}: {msg.get('model_response', '')}")
-                        chat_text = "\n".join(chat_text_parts)
+                        # Get timestamp with microsecond precision for uniqueness
+                        timestamp = datetime.datetime.now().isoformat()
+                        msg_index = len(chat_history) - 1  # Index of the last message (just added)
                         
-                        # Get timestamp from chat_id or use current time
-                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                        if "_" in chat_id:
-                            # Try to extract timestamp from chat_id
-                            try:
-                                timestamp = "_".join(chat_id.split("_")[:3])  # First 3 parts are date_time
-                            except Exception:
-                                pass
+                        # Save user message (use message index * 2 for user messages)
+                        user_msg_id = f"{chat_id}_msg_{msg_index * 2}_user"
+                        save_message(
+                            chat_id=chat_id,
+                            message_id=user_msg_id,
+                            message_text=text,
+                            role="user",
+                            archetype=archetype,
+                            timestamp=timestamp
+                        )
                         
-                        metadata = {
-                            "chat_id": chat_id,
-                            "archetypes": archetype,
-                            "timestamp": timestamp,
-                            "topic": text[:100] if text else ""  # First 100 chars as topic
-                        }
+                        # Save assistant response (use message index * 2 + 1 for assistant messages)
+                        assistant_msg_id = f"{chat_id}_msg_{msg_index * 2 + 1}_assistant"
+                        save_message(
+                            chat_id=chat_id,
+                            message_id=assistant_msg_id,
+                            message_text=result.get("response", ""),
+                            role="assistant",
+                            archetype=archetype,
+                            timestamp=timestamp
+                        )
                         
-                        # Update or create chat in vector database
-                        update_chat(chat_id, chat_text, metadata)
-                        logger.info(f"Chat saved to vector database: {chat_id}")
+                        logger.debug(f"Messages saved to vector database: {user_msg_id}, {assistant_msg_id}")
                         increment_counter("vector_db_saves")
                     except Exception as e:
                         # Log error but don't fail the request
@@ -216,7 +254,14 @@ async def process_text(request: Request):
                     logger.error(f"Unexpected error saving chat: {e}", exc_info=True)
                     # Don't fail the request if chat save fails
             
-            return result
+            # Track cache hits/misses
+            if result.get("cached"):
+                increment_counter("cache_hits")
+            else:
+                increment_counter("cache_misses")
+            
+            # Return result with cache status
+            return JSONResponse(content=result)
         except HTTPException:
             raise
         except Exception as e:
@@ -262,6 +307,113 @@ async def delete_history_file(filename: str):
         return JSONResponse(content={"status": "deleted"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/api/history/search")
+async def search_history(query: str = None, archetype: str = None):
+    """Search history files by text content and/or archetype."""
+    try:
+        # Allow search with just query or just archetype, or both
+        # If both are None, return empty results
+        if not query and not archetype:
+            return JSONResponse(content={
+                "results": [],
+                "count": 0,
+                "query": query,
+                "archetype": archetype
+            })
+        
+        if not os.path.exists(HISTORY_DIR):
+            os.makedirs(HISTORY_DIR, exist_ok=True)
+            return JSONResponse(content={
+                "results": [],
+                "count": 0,
+                "query": query,
+                "archetype": archetype
+            })
+        
+        files = [f for f in os.listdir(HISTORY_DIR) if f.endswith('.json')]
+        results = []
+        
+        query_lower = query.lower() if query else None
+        archetype_lower = archetype.lower() if archetype else None
+        
+        for filename in files:
+            try:
+                filepath = os.path.join(HISTORY_DIR, filename)
+                async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                    data = json.loads(content)
+                
+                # Check if matches archetype filter
+                matches_archetype = True
+                if archetype_lower:
+                    # Check if any message has matching archetype
+                    if isinstance(data, list):
+                        # Regular chat format
+                        matches_archetype = any(
+                            msg.get('archetype', '').lower() == archetype_lower 
+                            for msg in data if isinstance(msg, dict)
+                        )
+                    elif isinstance(data, dict):
+                        # RADA format or other format
+                        matches_archetype = (
+                            data.get('archetype', '').lower() == archetype_lower or
+                            archetype_lower in str(data.get('archetypes', '')).lower()
+                        )
+                # If no archetype filter, matches_archetype remains True
+                
+                # Check if matches text query
+                matches_query = True
+                if query_lower:
+                    # Search in all messages
+                    content_lower = content.lower()
+                    matches_query = query_lower in content_lower
+                # If no query, matches_query remains True
+                
+                # Include result if it matches both filters (or if filter is not applied)
+                if matches_archetype and matches_query:
+                    # Extract preview and metadata
+                    preview = ""
+                    chat_archetype = ""
+                    timestamp = filename.split('_')[0] if '_' in filename else ""
+                    
+                    if isinstance(data, list) and len(data) > 0:
+                        first_msg = data[0]
+                        if isinstance(first_msg, dict):
+                            preview = first_msg.get('user_input', '')[:100]
+                            chat_archetype = first_msg.get('archetype', '')
+                    elif isinstance(data, dict):
+                        preview = data.get('user_input', '')[:100]
+                        chat_archetype = data.get('archetype', '') or str(data.get('archetypes', ''))
+                    
+                    results.append({
+                        "filename": filename,
+                        "preview": preview,
+                        "archetype": chat_archetype,
+                        "timestamp": timestamp,
+                        "matches": {
+                            "query": matches_query if query else False,
+                            "archetype": matches_archetype if archetype else False
+                        }
+                    })
+            except Exception as e:
+                logger.warning(f"Error reading history file {filename}: {e}")
+                continue
+        
+        # Sort by timestamp (newest first)
+        results.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return JSONResponse(content={
+            "results": results,
+            "count": len(results),
+            "query": query,
+            "archetype": archetype
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error searching history: {str(e)}")
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -686,40 +838,101 @@ async def save_ai_provider_config(request: Request):
 async def get_vector_db_entries():
     """Get all entries from vector database."""
     try:
-        from vector_db.client import collection
-        all_data = collection.get()
-        
-        entries = []
-        if all_data['ids']:
-            for i, chat_id in enumerate(all_data['ids']):
-                metadata = all_data['metadatas'][i] if all_data['metadatas'] else {}
-                document = all_data['documents'][i] if all_data['documents'] else ""
-                
-                entries.append({
-                    "id": chat_id,
-                    "metadata": metadata,
-                    "document": document,
-                    "preview": document[:200] + "..." if len(document) > 200 else document
-                })
-        
-        return JSONResponse(content={"entries": entries, "count": len(entries)})
+        from vector_db.client import get_all_chats, is_vector_db_available
+        if not is_vector_db_available():
+            return JSONResponse(content={
+                "entries": [],
+                "count": 0,
+                "error": "Vector database not available (ChromaDB may not work in EXE mode)",
+                "available": False
+            })
+        chats = get_all_chats()
+        return JSONResponse(content={"entries": chats, "count": len(chats), "available": True})
     except ImportError:
-        raise HTTPException(status_code=500, detail="Vector database not available")
+        return JSONResponse(content={
+            "entries": [],
+            "count": 0,
+            "error": "Vector database module not available",
+            "available": False
+        })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading database: {str(e)}")
+        logger.error(f"Error getting vector DB entries: {e}", exc_info=True)
+        return JSONResponse(content={
+            "entries": [],
+            "count": 0,
+            "error": f"Error getting entries: {str(e)}",
+            "available": False
+        })
+
+@app.get("/api/vector-db/search")
+async def search_vector_db(query: str = None, n_results: int = 5):
+    """Search vector database for relevant chats."""
+    try:
+        if not query:
+            raise HTTPException(status_code=400, detail="Query parameter is required")
+        
+        from vector_db.client import search_chats, is_vector_db_available
+        if not is_vector_db_available():
+            return JSONResponse(content={
+                "results": [],
+                "query": query,
+                "error": "Vector database not available (ChromaDB may not work in EXE mode)",
+                "available": False
+            })
+        
+        results = search_chats(query, n_results=n_results)
+        
+        # Convert score (distance) to relevance (1 - distance for similarity)
+        for result in results:
+            if 'score' in result:
+                # ChromaDB returns distances (lower is better), convert to relevance (higher is better)
+                result['relevance'] = max(0, 1 - result['score'])
+                # Keep score for compatibility
+        return JSONResponse(content={"results": results, "query": query, "available": True})
+    except HTTPException:
+        raise
+    except ImportError:
+        return JSONResponse(content={
+            "results": [],
+            "query": query,
+            "error": "Vector database module not available",
+            "available": False
+        })
+    except Exception as e:
+        logger.error(f"Error searching vector DB: {e}", exc_info=True)
+        return JSONResponse(content={
+            "results": [],
+            "query": query,
+            "error": f"Error searching: {str(e)}",
+            "available": False
+        })
+
 
 @app.get("/api/vector-db/{chat_id}")
 async def get_vector_db_entry(chat_id: str):
     """Get specific entry from vector database by ID."""
     try:
-        from vector_db.client import collection
-        result = collection.get(ids=[chat_id])
+        from vector_db.client import collection, faiss_db, is_vector_db_available, use_faiss
+        if not is_vector_db_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Vector database not available"
+            )
         
-        if not result['ids']:
+        if use_faiss and faiss_db:
+            # Use FAISS
+            result = faiss_db.get(ids=[chat_id])
+        elif collection:
+            # Use ChromaDB
+            result = collection.get(ids=[chat_id])
+        else:
+            raise HTTPException(status_code=503, detail="Vector database not available")
+        
+        if not result.get('ids') or len(result['ids']) == 0:
             raise HTTPException(status_code=404, detail="Entry not found")
         
-        metadata = result['metadatas'][0] if result['metadatas'] else {}
-        document = result['documents'][0] if result['documents'] else ""
+        metadata = result['metadatas'][0] if result.get('metadatas') and len(result['metadatas']) > 0 else {}
+        document = result['documents'][0] if result.get('documents') and len(result['documents']) > 0 else ""
         
         return JSONResponse(content={
             "id": chat_id,
@@ -727,7 +940,7 @@ async def get_vector_db_entry(chat_id: str):
             "document": document
         })
     except ImportError:
-        raise HTTPException(status_code=500, detail="Vector database not available")
+        raise HTTPException(status_code=503, detail="Vector database module not available")
     except HTTPException:
         raise
     except Exception as e:
@@ -737,11 +950,18 @@ async def get_vector_db_entry(chat_id: str):
 async def delete_vector_db_entry(chat_id: str):
     """Delete entry from vector database by ID."""
     try:
-        from vector_db.client import delete_chat
+        from vector_db.client import delete_chat, is_vector_db_available
+        if not is_vector_db_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Vector database not available"
+            )
         delete_chat(chat_id)
         return JSONResponse(content={"status": "success", "message": f"Entry {chat_id} deleted"})
     except ImportError:
-        raise HTTPException(status_code=500, detail="Vector database not available")
+        raise HTTPException(status_code=503, detail="Vector database module not available")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {str(e)}")
 
@@ -749,7 +969,13 @@ async def delete_vector_db_entry(chat_id: str):
 async def update_vector_db_entry(chat_id: str, request: Request):
     """Update entry in vector database."""
     try:
-        from vector_db.client import update_chat
+        from vector_db.client import update_chat, is_vector_db_available
+        if not is_vector_db_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Vector database not available"
+            )
+        
         data = await request.json()
         
         document = data.get("document")
@@ -763,7 +989,7 @@ async def update_vector_db_entry(chat_id: str, request: Request):
         
         return JSONResponse(content={"status": "success", "message": f"Entry {chat_id} updated"})
     except ImportError:
-        raise HTTPException(status_code=500, detail="Vector database not available")
+        raise HTTPException(status_code=503, detail="Vector database module not available")
     except HTTPException:
         raise
     except Exception as e:
@@ -878,6 +1104,60 @@ async def get_metrics():
     try:
         metrics = get_metrics_summary()
         increment_counter("metrics_requests")
+        
+        # Add cache statistics
+        try:
+            from core.cache import get_cache_stats
+            metrics["cache"] = get_cache_stats()
+        except Exception as e:
+            logger.debug(f"Error getting cache stats: {e}")
+            metrics["cache"] = None
+        
+        # Add archetype usage statistics
+        archetype_counts = {}
+        for key, value in metrics.get("counters", {}).items():
+            if key.startswith("archetype_"):
+                archetype_name = key.replace("archetype_", "")
+                archetype_counts[archetype_name] = value
+        
+        metrics["archetype_usage"] = archetype_counts
+        
+        # Add history statistics
+        try:
+            history_files = [f for f in os.listdir(HISTORY_DIR) if f.endswith('.json')]
+            metrics["history"] = {
+                "total_chats": len(history_files),
+                "history_dir": HISTORY_DIR
+            }
+        except Exception as e:
+            logger.debug(f"Error getting history stats: {e}")
+            metrics["history"] = {"total_chats": 0}
+        
+        # Add vector DB statistics
+        try:
+            from vector_db.client import get_all_chats, is_vector_db_available, get_vector_db_type
+            if is_vector_db_available():
+                vector_db_chats = get_all_chats()
+                db_type = get_vector_db_type()
+                metrics["vector_db"] = {
+                    "total_entries": len(vector_db_chats),
+                    "available": True,
+                    "type": db_type
+                }
+            else:
+                metrics["vector_db"] = {
+                    "total_entries": 0,
+                    "available": False,
+                    "error": "Vector database not available"
+                }
+        except Exception as e:
+            logger.debug(f"Error getting vector DB stats: {e}")
+            metrics["vector_db"] = {
+                "total_entries": 0,
+                "available": False,
+                "error": str(e)
+            }
+        
         return JSONResponse(content=metrics)
     except Exception as e:
         logger.error(f"Error getting metrics: {e}", exc_info=True)
@@ -889,10 +1169,254 @@ async def reset_metrics_endpoint():
     try:
         reset_metrics()
         increment_counter("metrics_resets")
+        
+        # Also reset cache stats if requested
+        try:
+            from core.cache import reset_cache_stats
+            reset_cache_stats()
+        except Exception:
+            pass
+        
         return JSONResponse(content={"status": "success", "message": "Metrics reset"})
     except Exception as e:
         logger.error(f"Error resetting metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error resetting metrics: {str(e)}")
+
+# --- API for cache management ---
+@app.get("/api/cache/stats")
+async def get_cache_stats_endpoint():
+    """Get cache statistics."""
+    try:
+        from core.cache import get_cache_stats
+        stats = get_cache_stats()
+        return JSONResponse(content=stats)
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting cache stats: {str(e)}")
+
+@app.post("/api/cache/clear")
+async def clear_cache_endpoint():
+    """Clear the cache."""
+    try:
+        from core.cache import clear_cache
+        clear_cache()
+        return JSONResponse(content={"status": "success", "message": "Cache cleared"})
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error clearing cache: {str(e)}")
+
+@app.post("/api/cache/clear-expired")
+async def clear_expired_cache_endpoint():
+    """Clear expired cache entries."""
+    try:
+        from core.cache import clear_expired_entries, DEFAULT_TTL
+        cleared = clear_expired_entries(ttl=DEFAULT_TTL)
+        return JSONResponse(content={
+            "status": "success",
+            "message": f"Cleared {cleared} expired entries",
+            "cleared_count": cleared
+        })
+    except Exception as e:
+        logger.error(f"Error clearing expired cache: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error clearing expired cache: {str(e)}")
+
+# --- API for export/import chats ---
+@app.get("/api/history/export/{filename}")
+async def export_history_file(filename: str, format: str = "json"):
+    """Export a history file in specified format (json or markdown)."""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    try:
+        filepath = os.path.join(HISTORY_DIR, filename)
+        if not os.path.exists(filepath):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
+            content = await f.read()
+            data = json.loads(content)
+        
+        if format.lower() == "markdown":
+            # Convert to Markdown format
+            markdown_content = f"# Chat History: {filename}\n\n"
+            markdown_content += f"**Exported:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            markdown_content += "---\n\n"
+            
+            if isinstance(data, list):
+                # Regular chat format
+                for i, msg in enumerate(data, 1):
+                    markdown_content += f"## Message {i}\n\n"
+                    markdown_content += f"**Archetype:** {msg.get('archetype', 'N/A')}\n\n"
+                    markdown_content += f"**User:**\n{msg.get('user_input', '')}\n\n"
+                    markdown_content += f"**Assistant:**\n{msg.get('model_response', '')}\n\n"
+                    markdown_content += "---\n\n"
+            elif isinstance(data, dict):
+                # RADA format
+                markdown_content += f"**Question:** {data.get('user_input', 'N/A')}\n\n"
+                markdown_content += f"**Type:** {data.get('type', 'N/A')}\n\n"
+                
+                if data.get('type') == 'rada':
+                    if data.get('initial'):
+                        markdown_content += "### Initial Thoughts\n\n"
+                        for agent, response in data['initial'].items():
+                            markdown_content += f"**{agent}:**\n{response}\n\n"
+                    
+                    if data.get('discussion'):
+                        markdown_content += "### Discussion\n\n"
+                        for agent, response in data['discussion'].items():
+                            markdown_content += f"**{agent}:**\n{response}\n\n"
+                    
+                    if data.get('consensus'):
+                        markdown_content += "### Consensus\n\n"
+                        markdown_content += f"{data['consensus']}\n\n"
+            
+            return JSONResponse(content={
+                "format": "markdown",
+                "filename": filename.replace('.json', '.md'),
+                "content": markdown_content
+            })
+        else:
+            # JSON format
+            return JSONResponse(content={
+                "format": "json",
+                "filename": filename,
+                "content": data
+            })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting history file: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exporting file: {str(e)}")
+
+@app.get("/api/history/export/all")
+async def export_all_history(format: str = "json"):
+    """Export all history files as a single file."""
+    try:
+        if not os.path.exists(HISTORY_DIR):
+            os.makedirs(HISTORY_DIR, exist_ok=True)
+        
+        files = [f for f in os.listdir(HISTORY_DIR) if f.endswith('.json')]
+        files.sort(reverse=True)
+        
+        if not files:
+            return JSONResponse(content={
+                "format": format,
+                "filename": f"all_chats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{format}",
+                "content": {} if format.lower() == "json" else "# All Chat History\n\n**No chats found.**\n\n",
+                "total_chats": 0
+            })
+        
+        all_chats = {}
+        for filename in files:
+            try:
+                filepath = os.path.join(HISTORY_DIR, filename)
+                async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                    data = json.loads(content)
+                    all_chats[filename] = data
+            except Exception as e:
+                logger.warning(f"Error reading file {filename}: {e}")
+                continue
+        
+        if format.lower() == "markdown":
+            # Convert all to Markdown
+            markdown_content = f"# All Chat History\n\n"
+            markdown_content += f"**Exported:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            markdown_content += f"**Total Chats:** {len(all_chats)}\n\n"
+            markdown_content += "---\n\n"
+            
+            for filename, data in all_chats.items():
+                markdown_content += f"## {filename}\n\n"
+                
+                if isinstance(data, list):
+                    for i, msg in enumerate(data, 1):
+                        markdown_content += f"### Message {i}\n\n"
+                        markdown_content += f"**Archetype:** {msg.get('archetype', 'N/A')}\n\n"
+                        markdown_content += f"**User:**\n{msg.get('user_input', '')}\n\n"
+                        markdown_content += f"**Assistant:**\n{msg.get('model_response', '')}\n\n"
+                elif isinstance(data, dict):
+                    markdown_content += f"**Question:** {data.get('user_input', 'N/A')}\n\n"
+                    if data.get('type') == 'rada':
+                        if data.get('consensus'):
+                            markdown_content += f"**Consensus:**\n{data['consensus']}\n\n"
+                
+                markdown_content += "---\n\n"
+            
+            return JSONResponse(content={
+                "format": "markdown",
+                "filename": f"all_chats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                "content": markdown_content,
+                "total_chats": len(all_chats)
+            })
+        else:
+            # JSON format
+            return JSONResponse(content={
+                "format": "json",
+                "filename": f"all_chats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                "content": all_chats,
+                "total_chats": len(all_chats)
+            })
+    except Exception as e:
+        logger.error(f"Error exporting all history: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error exporting history: {str(e)}")
+
+@app.post("/api/history/import")
+async def import_history_file(request: Request):
+    """Import a history file."""
+    try:
+        data = await request.json()
+        content = data.get("content")
+        filename = data.get("filename")
+        format_type = data.get("format", "json")
+        
+        if not content or not filename:
+            raise HTTPException(status_code=400, detail="Content and filename are required")
+        
+        # Validate filename
+        if "/" in filename or "\\" in filename or ".." in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        # Ensure .json extension
+        if not filename.endswith('.json'):
+            filename += '.json'
+        
+        # Parse content based on format
+        if format_type.lower() == "markdown":
+            # For markdown, we'll create a simple structure
+            # This is a basic implementation - could be enhanced
+            raise HTTPException(status_code=501, detail="Markdown import not yet implemented")
+        else:
+            # JSON format
+            if isinstance(content, str):
+                imported_data = json.loads(content)
+            else:
+                imported_data = content
+        
+        # Save to history directory
+        filepath = os.path.join(HISTORY_DIR, filename)
+        
+        # If file exists, add timestamp to avoid overwriting
+        if os.path.exists(filepath):
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            base_name = filename.replace('.json', '')
+            filename = f"{base_name}_imported_{timestamp}.json"
+            filepath = os.path.join(HISTORY_DIR, filename)
+        
+        async with aiofiles.open(filepath, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(imported_data, ensure_ascii=False, indent=2))
+        
+        logger.info(f"Imported history file: {filename}")
+        
+        return JSONResponse(content={
+            "status": "success",
+            "message": f"File imported as {filename}",
+            "filename": filename
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error importing history file: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error importing file: {str(e)}")
 
 @app.get("/health")
 async def health_check():
@@ -904,8 +1428,8 @@ async def health_check():
         # Check if vector database is available
         vector_db_available = False
         try:
-            from vector_db.client import collection
-            vector_db_available = True
+            from vector_db.client import is_vector_db_available
+            vector_db_available = is_vector_db_available()
         except Exception:
             pass
         

@@ -152,3 +152,7 @@ def test_validate_archetypes_yaml_invalid_yaml():
         assert not is_valid
         assert len(errors) > 0
 
+
+
+
+

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local Brain</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -27,6 +29,7 @@
                     <button id="config-btn">⚙️ Налаштування агентів</button>
                     <button id="ai-provider-btn">🤖 AI Провайдер</button>
                     <button id="vector-db-btn">📊 Векторна БД</button>
+                    <button id="stats-btn">📈 Статистика</button>
                     <div class="dropdown-divider"></div>
                     <button id="shutdown-btn" class="shutdown-btn-menu">⛔ Завершити сеанс</button>
                 </div>
@@ -53,6 +56,14 @@
         <div class="modal-content">
             <span class="close-btn">&times;</span>
             <h2>Історія розмов</h2>
+            <div class="history-search-container" style="margin-bottom: 15px;">
+                <input type="text" id="history-search-input" placeholder="Пошук по тексту..." style="width: 60%; padding: 8px; margin-right: 10px;">
+                <select id="history-archetype-filter" style="padding: 8px; margin-right: 10px;">
+                    <option value="">Всі архетипи</option>
+                </select>
+                <button id="history-search-btn" style="padding: 8px 15px;">Пошук</button>
+                <button id="history-clear-search-btn" style="padding: 8px 15px; margin-left: 5px;">Очистити</button>
+            </div>
             <div class="history-columns">
                 <div id="history-list-container" class="history-list"></div>
                 <div id="history-view-container" class="history-view">
@@ -120,12 +131,35 @@
         <div class="modal-content config-modal-content" style="max-width: 90%; max-height: 90vh;">
             <span class="close-btn vector-db-close-btn">&times;</span>
             <h2>Векторна База Даних</h2>
+            <div class="vector-db-search-container" style="margin-bottom: 15px;">
+                <input type="text" id="vector-db-search-input" placeholder="Пошук релевантних чатів..." style="width: 70%; padding: 8px; margin-right: 10px;">
+                <input type="number" id="vector-db-search-n-results" value="5" min="1" max="20" style="width: 80px; padding: 8px; margin-right: 10px;" title="Кількість результатів">
+                <button id="vector-db-search-btn" style="padding: 8px 15px;">Пошук</button>
+                <button id="vector-db-clear-search-btn" style="padding: 8px 15px; margin-left: 5px;">Очистити</button>
+            </div>
             <div id="vector-db-container">
                 <div id="vector-db-loading" class="config-loading">Завантаження...</div>
                 <div id="vector-db-wrapper" class="hidden">
                     <div id="vector-db-entries-list" class="vector-db-entries-list"></div>
                     <div id="vector-db-entry-view" class="vector-db-entry-view">
                         <pre><code>Оберіть запис для перегляду...</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="stats-modal" class="modal-overlay hidden">
+        <div class="modal-content config-modal-content" style="max-width: 90%; max-height: 90vh;">
+            <span class="close-btn stats-close-btn">&times;</span>
+            <h2>Статистика використання</h2>
+            <div id="stats-container">
+                <div id="stats-loading" class="config-loading">Завантаження...</div>
+                <div id="stats-wrapper" class="hidden">
+                    <div id="stats-content"></div>
+                    <div class="config-actions" style="margin-top: 20px;">
+                        <button id="refresh-stats-btn" class="config-btn-add">🔄 Оновити</button>
+                        <button id="reset-stats-btn" class="config-btn-save">🗑️ Скинути статистику</button>
                     </div>
                 </div>
             </div>

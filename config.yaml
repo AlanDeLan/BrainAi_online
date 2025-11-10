@@ -47,3 +47,7 @@ security:
   allow_cors: false
   cors_origins: []  # List of allowed origins if CORS is enabled
 
+
+
+
+

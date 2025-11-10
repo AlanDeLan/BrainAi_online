@@ -301,12 +301,22 @@ def log_interaction(archetype_name, user_text, final_prompt, response):
     except Exception as e:
         logger.error(f"Failed to save interaction log: {e}", exc_info=True)
 
-def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
+def process_with_archetype(text: str, archetype_name: str, archetypes: dict, chat_history=None, chat_id=None, **kwargs):
     """
     Form prompt, pull relevant context from vector database,
     select appropriate model, generate response and log result.
+    
+    Args:
+        text: User input text
+        archetype_name: Name of archetype to use
+        archetypes: Dictionary of archetypes
+        chat_history: List of previous messages (deprecated - used for file-based history only)
+        chat_id: ID of current chat for vector database search
+        **kwargs: Additional parameters (temperature, max_tokens, top_p, top_k)
     """
-    logger.debug(f"Processing request for archetype '{archetype_name}'")
+    if chat_history is None:
+        chat_history = []
+    logger.debug(f"Processing request for archetype '{archetype_name}', chat_id={chat_id}")
     
     if not text or not archetype_name:
         error_msg = "Text and archetype must be specified."
@@ -332,19 +342,125 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
         # If not assembled during loading, assemble now
         system_prompt = build_multistage_prompt(archetype_config) or archetype_config.get("prompt", "")
 
-    # --- Add relevant context from vector database ---
+    # --- Smart context retrieval strategy ---
+    # 1. Search for relevant messages in current chat via vector DB (for continuity)
+    # 2. Search for relevant chats from entire database (for broader context)
+    # 3. Use sliding window for last N messages (to maintain immediate context)
+    # 4. Combine all for optimal context without token explosion
+    
     context = ""
-    if search_chats:
-        try:
-            similar_chats = search_chats(text, n_results=2)
-            if similar_chats:
-                context = "\n\n".join([f"Context from previous chat:\n{c['text']}" for c in similar_chats])
-                logger.debug(f"Found {len(similar_chats)} similar chats for context")
-        except Exception as e:
-            logger.warning(f"Failed to search vector database for context: {e}")
+    context_messages = []
+    context_chats = []
+    recent_messages = []
+    
+    # Maximum number of recent messages to include (sliding window)
+    MAX_RECENT_MESSAGES = 3  # Last 3 exchanges (6 messages: 3 user + 3 assistant)
+    
+    # Try to import vector DB functions
+    try:
+        from vector_db.client import search_chat_messages, search_chats, is_vector_db_available
+        
+        if is_vector_db_available():
+            # 1. Search for relevant messages in CURRENT chat (for continuity)
+            if chat_id:
+                try:
+                    relevant_messages = search_chat_messages(chat_id, text, n_results=3)
+                    if relevant_messages:
+                        # Sort by score (distance) - lower is better
+                        relevant_messages.sort(key=lambda x: x.get("score", float("inf")))
+                        context_messages = relevant_messages
+                        logger.debug(f"Found {len(relevant_messages)} relevant messages in current chat")
+                except Exception as e:
+                    logger.warning(f"Failed to search messages in current chat: {e}")
+            
+            # 2. Search for relevant chats from ENTIRE database (for broader context)
+            try:
+                # Search across all chats (excluding current chat if chat_id exists)
+                relevant_chats = search_chats(text, n_results=2)
+                if relevant_chats:
+                    # Filter out current chat if it appears in results
+                    if chat_id:
+                        relevant_chats = [c for c in relevant_chats if c.get("chat_id") != chat_id]
+                    
+                    # Sort by score (distance) - lower is better
+                    relevant_chats.sort(key=lambda x: x.get("score", float("inf")))
+                    context_chats = relevant_chats[:2]  # Take top 2 most relevant
+                    logger.debug(f"Found {len(context_chats)} relevant chats from entire database")
+            except Exception as e:
+                logger.warning(f"Failed to search chats in database: {e}")
+            
+            # Combine context from current chat and other chats
+            context_parts = []
+            
+            # Add context from current chat
+            if context_messages:
+                current_chat_parts = []
+                for msg in context_messages[:3]:  # Top 3 from current chat
+                    role_label = "User" if msg.get("role") == "user" else "Assistant"
+                    current_chat_parts.append(f"{role_label}: {msg.get('text', '')}")
+                if current_chat_parts:
+                    context_parts.append("Relevant context from this conversation:\n" + "\n\n".join(current_chat_parts))
+            
+            # Add context from other chats
+            if context_chats:
+                other_chats_parts = []
+                for chat in context_chats:
+                    chat_text = chat.get("text", "")
+                    # Truncate long chats to avoid token explosion
+                    if len(chat_text) > 500:
+                        chat_text = chat_text[:500] + "..."
+                    other_chats_parts.append(f"From previous chat ({chat.get('chat_id', 'unknown')}):\n{chat_text}")
+                if other_chats_parts:
+                    context_parts.append("Relevant context from previous conversations:\n" + "\n\n".join(other_chats_parts))
+            
+            if context_parts:
+                context = "\n\n".join(context_parts)
+                logger.debug(f"Combined context: {len(context_messages)} messages from current chat, {len(context_chats)} chats from database")
+    except ImportError:
+        # Vector DB not available, skip context search
+        pass
+    
+    # Get recent messages for sliding window (from file-based history)
+    if chat_history and len(chat_history) > 0:
+        # Take last MAX_RECENT_MESSAGES exchanges
+        recent_history = chat_history[-MAX_RECENT_MESSAGES:]
+        recent_messages = []
+        for entry in recent_history:
+            # Convert to conversation format
+            if "user_input" in entry:
+                recent_messages.append({
+                    "role": "user",
+                    "content": entry["user_input"]
+                })
+            if "model_response" in entry:
+                recent_messages.append({
+                    "role": "model",
+                    "content": entry["model_response"]
+                })
+        logger.debug(f"Using {len(recent_messages)} recent messages for sliding window")
 
-    full_prompt = f"{system_prompt}\n\n{context}\n\nUser query:\n{text}"
+    full_prompt = f"{system_prompt}\n\n{context}\n\nUser query:\n{text}" if context else f"{system_prompt}\n\nUser query:\n{text}"
     logger.debug(f"Full prompt length: {len(full_prompt)} characters")
+
+    # Get model parameters: use kwargs if provided, otherwise use archetype config, otherwise use defaults
+    # Use 'in' check to allow 0.0 values (which would be False with 'or')
+    model_params = {
+        'temperature': kwargs.get('temperature') if 'temperature' in kwargs else archetype_config.get('temperature', 0.7),
+        'max_tokens': kwargs.get('max_tokens') if 'max_tokens' in kwargs else archetype_config.get('max_tokens', 2000),
+    }
+    
+    # Add optional parameters
+    if 'top_p' in kwargs:
+        model_params['top_p'] = kwargs['top_p']
+    elif 'top_p' in archetype_config:
+        model_params['top_p'] = archetype_config['top_p']
+    
+    if 'top_k' in kwargs:
+        model_params['top_k'] = kwargs['top_k']
+    elif 'top_k' in archetype_config:
+        model_params['top_k'] = archetype_config['top_k']
+    
+    logger.debug(f"Model parameters: {model_params}")
 
     try:
         # Normalize model name for current provider
@@ -352,12 +468,63 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict):
         normalized_model = normalize_model_name(model_name, provider)
         logger.debug(f"Using model: {normalized_model} (provider: {provider.value})")
         
-        # Generate response through current provider
-        model_response = generate_response(normalized_model, full_prompt)
+        # Initialize cache_key variable
+        cache_key = None
+        
+        # Check cache first
+        # Note: We don't cache when there's context from vector DB or conversation history
+        # Cache only works for stateless queries
+        if not context_messages and not context_chats and not recent_messages:
+            try:
+                from core.cache import generate_cache_key, get_cached_response, cache_response, DEFAULT_TTL
+                
+                # Generate cache key using full prompt (for stateless queries)
+                cache_key = generate_cache_key(
+                    prompt=full_prompt,
+                    model_name=normalized_model,
+                    temperature=model_params.get('temperature'),
+                    max_tokens=model_params.get('max_tokens'),
+                    top_p=model_params.get('top_p'),
+                    top_k=model_params.get('top_k')
+                )
+                
+                # Try to get cached response
+                cached_response = get_cached_response(cache_key, ttl=DEFAULT_TTL)
+                if cached_response:
+                    logger.info(f"Cache hit for archetype '{archetype_name}' ({len(cached_response)} chars)")
+                    return {"response": cached_response, "cached": True}
+            except Exception as cache_error:
+                # If caching fails, continue without cache
+                logger.debug(f"Cache check failed: {cache_error}")
+        
+        # Use sliding window: only last N messages + relevant context from vector DB
+        # This prevents token explosion while maintaining context
+        conversation_history = recent_messages if recent_messages else None
+        
+        # Generate response through current provider with parameters and context
+        # Pass chat_id to enable ChatSession reuse (prevents token explosion)
+        model_response = generate_response(
+            normalized_model, 
+            system_prompt=system_prompt,
+            user_message=text,
+            context=context,
+            conversation_history=conversation_history,
+            chat_id=chat_id,
+            **model_params
+        )
         logger.info(f"Successfully generated response for archetype '{archetype_name}' ({len(model_response)} chars)")
+        
+        # Cache the response (if cache_key was generated)
+        if cache_key:
+            try:
+                from core.cache import cache_response, DEFAULT_TTL
+                cache_response(cache_key, model_response, ttl=DEFAULT_TTL)
+            except Exception as cache_error:
+                logger.debug(f"Cache save failed: {cache_error}")
+        
         # Note: Interaction logging is handled in main.py to avoid duplicate files
         # log_interaction is kept for backward compatibility but not called here
-        return {"response": model_response}
+        return {"response": model_response, "cached": False}
     except ValueError as e:
         error_message = f"Configuration error: {e}"
         logger.error(error_message, exc_info=True)
