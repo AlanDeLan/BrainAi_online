@@ -1,5 +1,6 @@
 import os
 import sys
+from core.utils import get_base_dir
 
 # Lazy import logger to avoid circular imports
 def get_logger():
@@ -29,21 +30,6 @@ def _import_chromadb():
             # ChromaDB may not be available in PyInstaller due to Rust components
             raise ImportError(f"ChromaDB not available: {e}")
     return _chromadb, _Settings
-
-# --- Функція для коректної роботи з ресурсами у PyInstaller ---
-def get_base_dir():
-    """Отримує базову директорію для збереження даних."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller: використовуємо директорію, де знаходиться exe файл
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            if 'vector_db' in base_dir:
-                base_dir = os.path.dirname(base_dir)
-            return base_dir
-    else:
-        return os.getcwd()
 
 # Ініціалізація клієнта векторної бази даних
 # Спочатку пробуємо ChromaDB, якщо не працює - використовуємо FAISS

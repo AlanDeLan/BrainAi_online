@@ -24,14 +24,21 @@
                 <button id="history-btn">Історія</button>
             </div>
             <div class="header-menu">
+                <div class="language-switcher">
+                    <button id="lang-uk-btn" class="lang-btn active" data-lang="uk" title="Українська">UA</button>
+                    <button id="lang-en-btn" class="lang-btn" data-lang="en" title="English">EN</button>
+                </div>
                 <button id="menu-btn" class="menu-btn">☰ Меню</button>
                 <div id="dropdown-menu" class="dropdown-menu hidden">
-                    <button id="config-btn">⚙️ Налаштування агентів</button>
-                    <button id="ai-provider-btn">🤖 AI Провайдер</button>
-                    <button id="vector-db-btn">📊 Векторна БД</button>
-                    <button id="stats-btn">📈 Статистика</button>
+                    <button id="theme-toggle-btn">Тема</button>
                     <div class="dropdown-divider"></div>
-                    <button id="shutdown-btn" class="shutdown-btn-menu">⛔ Завершити сеанс</button>
+                    <button id="config-btn">Налаштування агентів</button>
+                    <button id="ai-provider-btn">AI Провайдер</button>
+                    <button id="vector-db-btn">Векторна БД</button>
+                    <button id="upload-file-btn">Завантажити файл</button>
+                    <button id="stats-btn">Статистика</button>
+                    <div class="dropdown-divider"></div>
+                    <button id="shutdown-btn" class="shutdown-btn-menu">Завершити сеанс</button>
                 </div>
             </div>
         </header>
@@ -43,10 +50,10 @@
         <footer>
             <form id="chat-form">
                 <textarea id="message-input" placeholder="Введіть повідомлення... (Shift+Enter — новий рядок)" rows="1"></textarea>
-                <button type="submit">Відправити</button>
-                <label style="margin-left: 10px;">
+                <button type="submit" id="send-btn">Відправити</button>
+                <label style="margin-left: 10px;" id="remember-chat-label">
                     <input type="checkbox" id="remember-chat-toggle" checked>
-                    Запамʼятати цей чат
+                    <span id="remember-chat-text">Запамʼятати цей чат</span>
                 </label>
             </form>
         </footer>
@@ -55,19 +62,19 @@
     <div id="history-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <span class="close-btn">&times;</span>
-            <h2>Історія розмов</h2>
-            <div class="history-search-container" style="margin-bottom: 15px;">
-                <input type="text" id="history-search-input" placeholder="Пошук по тексту..." style="width: 60%; padding: 8px; margin-right: 10px;">
-                <select id="history-archetype-filter" style="padding: 8px; margin-right: 10px;">
-                    <option value="">Всі архетипи</option>
+            <h2 id="history-modal-title">Історія розмов</h2>
+            <div class="history-search-container" style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: nowrap;">
+                <input type="text" id="history-search-input" placeholder="Пошук по тексту..." style="width: 45%; padding: 8px; flex-shrink: 1;">
+                <select id="history-archetype-filter" style="padding: 8px; flex-shrink: 0;">
+                    <option value="" id="history-all-archetypes-option">Всі архетипи</option>
                 </select>
-                <button id="history-search-btn" style="padding: 8px 15px;">Пошук</button>
-                <button id="history-clear-search-btn" style="padding: 8px 15px; margin-left: 5px;">Очистити</button>
+                <button id="history-search-btn" style="padding: 8px 15px; flex-shrink: 0; white-space: nowrap;">Пошук</button>
+                <button id="history-clear-search-btn" style="padding: 8px 15px; flex-shrink: 0; white-space: nowrap;">Очистити</button>
             </div>
             <div class="history-columns">
                 <div id="history-list-container" class="history-list"></div>
                 <div id="history-view-container" class="history-view">
-                    <pre><code>Оберіть чат для перегляду...</code></pre>
+                    <pre><code id="history-select-chat-text">Оберіть чат для перегляду...</code></pre>
                 </div>
             </div>
         </div>
@@ -76,7 +83,7 @@
     <div id="config-modal" class="modal-overlay hidden">
         <div class="modal-content config-modal-content">
             <span class="close-btn config-close-btn">&times;</span>
-            <h2>Налаштування агентів</h2>
+            <h2 id="config-modal-title">Налаштування агентів</h2>
             <div id="config-form-container">
                 <div id="config-loading" class="config-loading">Завантаження...</div>
                 <div id="config-form-wrapper" class="hidden">
@@ -94,27 +101,27 @@
     <div id="ai-provider-modal" class="modal-overlay hidden">
         <div class="modal-content config-modal-content">
             <span class="close-btn ai-provider-close-btn">&times;</span>
-            <h2>Налаштування AI Провайдера</h2>
+            <h2 id="ai-provider-modal-title">Налаштування AI Провайдера</h2>
             <div id="ai-provider-form-container">
                 <div id="ai-provider-loading" class="config-loading">Завантаження...</div>
                 <div id="ai-provider-form-wrapper" class="hidden">
                     <div class="archetype-form-group">
-                        <label>Провайдер:</label>
+                        <label id="ai-provider-label">Провайдер:</label>
                         <select id="ai-provider-select">
                             <option value="google_ai">Google AI Studio</option>
                             <option value="openai">OpenAI API</option>
                         </select>
                     </div>
                     <div class="archetype-form-group">
-                        <label>Google API Key:</label>
+                        <label id="google-api-key-label">Google API Key:</label>
                         <input type="password" id="google-api-key" placeholder="Введіть Google API ключ">
                     </div>
                     <div class="archetype-form-group">
-                        <label>OpenAI API Key:</label>
+                        <label id="openai-api-key-label">OpenAI API Key:</label>
                         <input type="password" id="openai-api-key" placeholder="Введіть OpenAI API ключ">
                     </div>
                     <div class="archetype-form-group">
-                        <label>OpenAI Base URL (опціонально):</label>
+                        <label id="openai-base-url-label">OpenAI Base URL (опціонально):</label>
                         <input type="text" id="openai-base-url" placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1">
                     </div>
                     <div id="ai-provider-models" class="ai-provider-models"></div>
@@ -128,38 +135,78 @@
     </div>
 
     <div id="vector-db-modal" class="modal-overlay hidden">
-        <div class="modal-content config-modal-content" style="max-width: 90%; max-height: 90vh;">
+        <div class="modal-content config-modal-content">
             <span class="close-btn vector-db-close-btn">&times;</span>
-            <h2>Векторна База Даних</h2>
-            <div class="vector-db-search-container" style="margin-bottom: 15px;">
-                <input type="text" id="vector-db-search-input" placeholder="Пошук релевантних чатів..." style="width: 70%; padding: 8px; margin-right: 10px;">
-                <input type="number" id="vector-db-search-n-results" value="5" min="1" max="20" style="width: 80px; padding: 8px; margin-right: 10px;" title="Кількість результатів">
-                <button id="vector-db-search-btn" style="padding: 8px 15px;">Пошук</button>
-                <button id="vector-db-clear-search-btn" style="padding: 8px 15px; margin-left: 5px;">Очистити</button>
+            <h2 id="vector-db-modal-title">Векторна База Даних</h2>
+            <div class="vector-db-search-container" style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: nowrap;">
+                <input type="text" id="vector-db-search-input" placeholder="Пошук релевантних чатів..." style="width: 50%; padding: 8px; flex-shrink: 1;">
+                <input type="number" id="vector-db-search-n-results" value="5" min="1" max="20" style="width: 80px; padding: 8px; flex-shrink: 0;" title="Кількість результатів" data-title-uk="Кількість результатів" data-title-en="Number of results">
+                <button id="vector-db-search-btn" style="padding: 8px 15px; flex-shrink: 0; white-space: nowrap;">Пошук</button>
+                <button id="vector-db-clear-search-btn" style="padding: 8px 15px; flex-shrink: 0; white-space: nowrap;">Очистити</button>
             </div>
             <div id="vector-db-container">
                 <div id="vector-db-loading" class="config-loading">Завантаження...</div>
-                <div id="vector-db-wrapper" class="hidden">
-                    <div id="vector-db-entries-list" class="vector-db-entries-list"></div>
-                    <div id="vector-db-entry-view" class="vector-db-entry-view">
-                        <pre><code>Оберіть запис для перегляду...</code></pre>
+                <div id="vector-db-wrapper" class="vector-db-columns hidden">
+                    <div id="vector-db-entries-list" class="vector-db-list"></div>
+                    <div id="vector-db-entry-view" class="vector-db-view">
+                        <pre><code id="vector-db-select-entry-text">Оберіть запис для перегляду...</code></pre>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <div id="upload-file-modal" class="modal-overlay hidden">
+        <div class="modal-content config-modal-content">
+            <span class="close-btn upload-file-close-btn">&times;</span>
+            <h2 id="upload-file-modal-title">Завантажити файл</h2>
+            <div id="upload-file-container">
+                <p id="upload-file-description" style="margin-bottom: 15px;">Завантажте текстовий файл для обробки та збереження в векторну базу даних. Файл буде розбитий на частини та доданий до контексту для асистента.</p>
+                
+                <div style="margin-bottom: 15px;">
+                    <label for="file-input" id="upload-file-label" style="display: block; margin-bottom: 8px; font-weight: bold;">Оберіть файл:</label>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+                        <label for="file-input" style="display: inline-block; flex-shrink: 0; cursor: pointer;">
+                            <input type="file" id="file-input" accept=".txt,.md,.docx,.pdf" style="display: none;">
+                            <span id="file-select-button" style="display: inline-block; padding: 6px 12px; background-color: var(--accent-color); color: white; border-radius: 4px; cursor: pointer;">Вибрати файл</span>
+                        </label>
+                        <div id="file-selection-status" style="color: #666; font-size: 0.9em; font-style: italic; white-space: nowrap; margin-left: 0;"></div>
+                    </div>
+                    <small id="upload-file-formats" style="color: #666; display: block; margin-top: 5px;">
+                        Підтримувані формати: .txt, .md, .docx, .pdf
+                    </small>
+                </div>
+                
+                <div id="upload-file-progress" class="hidden" style="margin-bottom: 15px;">
+                    <div style="background: #f0f0f0; border-radius: 4px; padding: 10px;">
+                        <div id="upload-file-status" style="margin-bottom: 5px;">Обробка...</div>
+                        <div style="background: #ddd; border-radius: 4px; height: 20px; overflow: hidden;">
+                            <div id="upload-file-progress-bar" style="background: #4a9; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="upload-file-message" style="margin-bottom: 15px;"></div>
+                
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button id="upload-file-submit-btn" style="padding: 10px 20px; background: #4a9; color: white; border: none; border-radius: 4px; cursor: pointer;">Завантажити</button>
+                    <button id="upload-file-cancel-btn" style="padding: 10px 20px; background: #ccc; color: #333; border: none; border-radius: 4px; cursor: pointer;">Скасувати</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="stats-modal" class="modal-overlay hidden">
-        <div class="modal-content config-modal-content" style="max-width: 90%; max-height: 90vh;">
+        <div class="modal-content config-modal-content">
             <span class="close-btn stats-close-btn">&times;</span>
-            <h2>Статистика використання</h2>
+            <h2 id="stats-modal-title">Статистика використання</h2>
             <div id="stats-container">
                 <div id="stats-loading" class="config-loading">Завантаження...</div>
                 <div id="stats-wrapper" class="hidden">
                     <div id="stats-content"></div>
                     <div class="config-actions" style="margin-top: 20px;">
-                        <button id="refresh-stats-btn" class="config-btn-add">🔄 Оновити</button>
-                        <button id="reset-stats-btn" class="config-btn-save">🗑️ Скинути статистику</button>
+                        <button id="refresh-stats-btn" class="config-btn-add">Оновити</button>
+                        <button id="reset-stats-btn" class="config-btn-save">Скинути статистику</button>
                     </div>
                 </div>
             </div>

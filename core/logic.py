@@ -17,17 +17,7 @@ from core.ai_providers import (
 # --- Import logging and validation ---
 from core.logger import logger
 from core.validation import validate_archetypes_yaml, validate_archetypes_config
-
-# --- Function for correct resource handling in PyInstaller ---
-def resource_path(relative_path):
-    """Get correct path to resources for PyInstaller."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller creates temporary folder in _MEIPASS
-        base_path = sys._MEIPASS
-    else:
-        # Normal mode - use current directory
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+from core.utils import resource_path, get_base_directory
 
 # --- Import for vector database search ---
 try:
@@ -38,21 +28,6 @@ except ImportError:
 # --- Configuration ---
 # Load .env file (use dotenv_values for reliability)
 from dotenv import dotenv_values
-
-# Function to get base directory (with PyInstaller support)
-def get_base_directory():
-    """Get base directory for searching .env file."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller: search next to exe file
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            if 'core' in base_dir:
-                base_dir = os.path.dirname(base_dir)
-            return base_dir
-    else:
-        return os.getcwd()
 
 # Search for .env in various locations (with PyInstaller support)
 base_dir = get_base_directory()
@@ -374,9 +349,10 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
                     logger.warning(f"Failed to search messages in current chat: {e}")
             
             # 2. Search for relevant chats from ENTIRE database (for broader context)
+            # This includes both chat conversations and uploaded files
             try:
-                # Search across all chats (excluding current chat if chat_id exists)
-                relevant_chats = search_chats(text, n_results=2)
+                # Search across all chats and files (excluding current chat if chat_id exists)
+                relevant_chats = search_chats(text, n_results=3)
                 if relevant_chats:
                     # Filter out current chat if it appears in results
                     if chat_id:
@@ -385,7 +361,7 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
                     # Sort by score (distance) - lower is better
                     relevant_chats.sort(key=lambda x: x.get("score", float("inf")))
                     context_chats = relevant_chats[:2]  # Take top 2 most relevant
-                    logger.debug(f"Found {len(context_chats)} relevant chats from entire database")
+                    logger.debug(f"Found {len(context_chats)} relevant chats/files from entire database")
             except Exception as e:
                 logger.warning(f"Failed to search chats in database: {e}")
             

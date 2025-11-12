@@ -4,23 +4,12 @@ import datetime
 import json
 from fastapi import APIRouter, Request, HTTPException
 from core.logic import process_with_archetype, load_archetypes
+from core.utils import get_base_dir
 
 try:
     from vector_db.client import save_chat
 except ImportError:
     save_chat = None
-
-# --- Функція для коректної роботи з ресурсами у PyInstaller ---
-def get_base_dir():
-    """Отримує базову директорію для збереження даних."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller: використовуємо директорію, де знаходиться exe файл
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            return os.path.dirname(os.path.abspath(__file__))
-    else:
-        return os.getcwd()
 
 router = APIRouter()
 

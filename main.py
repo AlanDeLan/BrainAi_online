@@ -3,7 +3,7 @@ import sys
 import json
 import threading
 from typing import List, Optional
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -23,6 +23,7 @@ from core.monitoring import (
     increment_counter, record_timer, record_metric,
     get_metrics_summary, TimerContext, reset_metrics
 )
+from core.utils import resource_path, get_base_directory
 from conferences.rada import router as rada_router
 import aiofiles
 import yaml
@@ -42,17 +43,6 @@ def set_shutdown_event(event):
     """Set shutdown event to signal completion."""
     global _shutdown_event
     _shutdown_event = event
-
-# --- Function for correct resource handling in PyInstaller ---
-def resource_path(relative_path):
-    """Get correct path to resources for PyInstaller."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller creates temporary folder in _MEIPASS
-        base_path = sys._MEIPASS
-    else:
-        # Normal mode - use current directory
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
 
 app = FastAPI(
     title="Local Brain",
@@ -91,6 +81,9 @@ else:
 
 HISTORY_DIR = os.path.join(base_dir, "history")
 os.makedirs(HISTORY_DIR, exist_ok=True)
+
+UPLOAD_DIR = os.path.join(base_dir, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 archetypes = load_archetypes()
 
@@ -422,17 +415,6 @@ async def favicon():
         return FileResponse(favicon_path)
     else:
         raise HTTPException(status_code=404, detail="Favicon not found")
-
-def get_base_directory():
-    """Get base directory (next to exe or project root) with PyInstaller support."""
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller: search next to exe file
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            return os.path.dirname(os.path.abspath(__file__))
-    else:
-        return os.getcwd()
 
 def get_archetypes_yaml_path():
     """Get path to archetypes.yaml with PyInstaller support."""
@@ -995,7 +977,155 @@ async def update_vector_db_entry(chat_id: str, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating entry: {str(e)}")
 
+# --- API for file upload and processing ---
+@app.post("/api/files/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Upload and process a text file for vector database."""
+    try:
+        from core.file_processor import process_file, is_file_supported, get_supported_extensions
+        from vector_db.client import save_message, is_vector_db_available
+        import datetime
+        
+        # Check if file is supported
+        if not is_file_supported(file.filename):
+            supported = ", ".join(get_supported_extensions())
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type. Supported: {supported}"
+            )
+        
+        # Check vector DB availability
+        if not is_vector_db_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Vector database not available. Cannot process files."
+            )
+        
+        # Save uploaded file temporarily
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        logger.info(f"File uploaded: {file.filename} ({len(content)} bytes)")
+        
+        # Process file into chunks
+        chunks = process_file(file_path, chunk_size=1000, chunk_overlap=200)
+        
+        if not chunks:
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty or contains no text"
+            )
+        
+        # Save chunks to vector database
+        timestamp = datetime.datetime.now().isoformat()
+        saved_count = 0
+        
+        for chunk in chunks:
+            # Create unique ID for chunk
+            chunk_id = f"file_{file.filename}_{chunk['chunk_index']}"
+            
+            # Save to vector DB
+            save_message(
+                chat_id=f"file_{file.filename}",
+                message_id=chunk_id,
+                message_text=chunk["text"],
+                role="file",
+                archetype=None,
+                timestamp=timestamp
+            )
+            saved_count += 1
+        
+        logger.info(f"File processed: {file.filename} -> {saved_count} chunks saved to vector DB")
+        
+        return JSONResponse(content={
+            "status": "success",
+            "message": f"File '{file.filename}' processed and saved to vector database",
+            "filename": file.filename,
+            "chunks_count": saved_count,
+            "file_size": len(content)
+        })
+        
+    except HTTPException:
+        raise
+    except ImportError as e:
+        logger.error(f"Import error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"File processing module not available: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error processing file: {e}", exc_info=True)
+        # Clean up uploaded file if exists
+        if 'file_path' in locals() and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing file: {str(e)}"
+        )
+
+@app.get("/api/files/supported")
+async def get_supported_file_types():
+    """Get list of supported file types."""
+    try:
+        from core.file_processor import get_supported_extensions
+        extensions = get_supported_extensions()
+        return JSONResponse(content={
+            "supported_extensions": extensions,
+            "supported_types": {
+                ".txt": "Plain text",
+                ".md": "Markdown",
+                ".docx": "Microsoft Word",
+                ".pdf": "PDF document"
+            }
+        })
+    except ImportError:
+        return JSONResponse(content={
+            "supported_extensions": [".txt", ".md"],
+            "supported_types": {
+                ".txt": "Plain text",
+                ".md": "Markdown"
+            },
+            "note": "Full file processing not available"
+        })
+
 # --- API for server shutdown ---
+@app.post("/api/set-language")
+async def set_language(request: Request):
+    """Set user's preferred language."""
+    try:
+        data = await request.json()
+        language = data.get("language", DEFAULT_LANGUAGE)
+        
+        if language not in SUPPORTED_LANGUAGES:
+            language = DEFAULT_LANGUAGE
+        
+        # Create response with cookie
+        response = JSONResponse(content={
+            "status": "success",
+            "language": language
+        })
+        
+        # Set cookie for language preference
+        response.set_cookie(
+            key="language",
+            value=language,
+            max_age=365 * 24 * 60 * 60,  # 1 year
+            httponly=False,
+            samesite="lax"
+        )
+        
+        logger.info(f"Language set to: {language}")
+        return response
+    except Exception as e:
+        logger.error(f"Error setting language: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/shutdown")
 async def shutdown_server():
     """Shutdown the server."""

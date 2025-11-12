@@ -6,6 +6,7 @@ import os
 import sys
 from typing import Dict, Optional, Any
 from enum import Enum
+from core.utils import get_base_directory
 
 class AIProvider(Enum):
     """AI provider types."""
@@ -20,19 +21,6 @@ _provider_config: Dict[str, Any] = {}
 # Global dictionary to store ChatSession objects by chat_id
 # Format: {(chat_id, model_name): ChatSession}
 _google_ai_chat_sessions: Dict[tuple, Any] = {}
-
-def get_base_directory():
-    """Get base directory for searching configuration."""
-    if hasattr(sys, '_MEIPASS'):
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            if 'core' in base_dir:
-                base_dir = os.path.dirname(base_dir)
-            return base_dir
-    else:
-        return os.getcwd()
 
 def load_provider_config():
     """Load AI provider configuration from .env file."""

@@ -7,6 +7,7 @@ import sys
 import json
 import pickle
 import numpy as np
+from core.utils import get_base_dir
 
 # Lazy import logger
 def get_logger():
@@ -57,19 +58,6 @@ def _import_sentence_transformer():
                 raise ImportError(f"Could not load sentence transformer model: {e2}")
     
     return _model
-
-def get_base_dir():
-    """Get base directory for data storage."""
-    if hasattr(sys, '_MEIPASS'):
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            if 'vector_db' in base_dir:
-                base_dir = os.path.dirname(base_dir)
-            return base_dir
-    else:
-        return os.getcwd()
 
 class FAISSVectorDB:
     """FAISS-based vector database implementation."""

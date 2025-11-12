@@ -158,8 +158,8 @@ local_gemini/
 - [prompts/PROMPTS_GUIDE.md](prompts/PROMPTS_GUIDE.md) - Інструкція з промптів
 
 ### Для розробників:
-- [BUILD_EXE.md](BUILD_EXE.md) - Інструкція зі збірки exe
-- [QUICK_BUILD.md](QUICK_BUILD.md) - Швидка інструкція зі збірки
+- [ЗБІРКА_EXE.md](ЗБІРКА_EXE.md) - Інструкція зі збірки exe
+- [UPDATE_EXE_GUIDE.md](UPDATE_EXE_GUIDE.md) - Оновлення exe файлу
 - [AUDIT_REPORT.md](AUDIT_REPORT.md) - Звіт про аудит проекту
 
 ## 🔧 Налаштування
