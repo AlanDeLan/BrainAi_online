@@ -1,0 +1,80 @@
+# ================================
+# Render Blueprint Configuration
+# ================================
+
+services:
+  # Main Web Service
+  - type: web
+    name: brainai-production
+    env: python
+    region: frankfurt  # Найближче до України
+    plan: starter  # $7/місяць (free tier має обмеження)
+    branch: main
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: |
+      uvicorn main_production:app --host 0.0.0.0 --port $PORT --workers 2 --log-level info
+    healthCheckPath: /health
+    
+    # Auto-deploy on push
+    autoDeploy: true
+    
+    # Environment Variables
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      
+      - key: ENVIRONMENT
+        value: production
+      
+      - key: DEBUG
+        value: false
+      
+      # Database URL (автоматично з Render PostgreSQL)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brainai-db
+          property: connectionString
+      
+      # API Keys (додайте вручну через Render Dashboard)
+      - key: GOOGLE_API_KEY
+        sync: false  # Не синхронізується з репозиторієм
+      
+      - key: OPENAI_API_KEY
+        sync: false
+      
+      - key: SECRET_KEY
+        generateValue: true  # Render створить автоматично
+      
+      - key: SESSION_SECRET
+        generateValue: true
+      
+      - key: AI_PROVIDER
+        value: google_ai
+      
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      
+      # CORS Settings
+      - key: CORS_ORIGINS
+        value: '["https://brainai-production.onrender.com"]'
+      
+      # Rate Limiting
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"
+      
+      - key: RATE_LIMIT_PER_HOUR
+        value: "1000"
+      
+      # Logging
+      - key: LOG_LEVEL
+        value: INFO
+
+databases:
+  # PostgreSQL Database
+  - name: brainai-db
+    databaseName: brainai
+    plan: starter  # $7/місяць (free tier існує 90 днів)
+    region: frankfurt
+    ipAllowList: []  # Порожній = доступ тільки від Render сервісів

@@ -145,6 +145,7 @@ $RECYCLE.BIN/
 .env.*.local
 .env.production
 .env.development
+!.env.example
 *.key
 *.pem
 *.crt
