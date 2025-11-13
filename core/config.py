@@ -1,5 +1,5 @@
 """
-Configuration management for Local Brain.
+Configuration management for BrainAi_online.
 """
 import os
 import yaml
@@ -32,7 +32,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         },
         "logging": {
             "level": "INFO",
-            "file": "logs/local_brain.log",
+            "file": "logs/brainai_online.log",
             "max_bytes": 10485760,
             "backup_count": 5,
             "console": True,

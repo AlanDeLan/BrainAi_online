@@ -16,7 +16,7 @@ def get_logger():
         return logger
     except ImportError:
         import logging
-        return logging.getLogger("local_brain")
+        return logging.getLogger("brainai_online")
 
 def chunk_text(text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
     """

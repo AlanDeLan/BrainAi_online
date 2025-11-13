@@ -1,5 +1,5 @@
 """
-Port management utilities for Local Brain.
+Port management utilities for BrainAi_online.
 Handles port checking and freeing on Windows and other platforms.
 """
 import socket
@@ -14,7 +14,7 @@ try:
     from core.logger import logger
 except ImportError:
     import logging
-    logger = logging.getLogger("local_brain")
+    logger = logging.getLogger("brainai_online")
     if not logger.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))

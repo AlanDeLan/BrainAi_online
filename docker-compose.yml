@@ -1,10 +1,10 @@
-# Docker Compose для Local Brain
+# Docker Compose для BrainAi_online
 # Використання: docker-compose up
 
 version: '3.8'
 
 services:
-  local-brain:
+  brainai_online:
     build: .
     ports:
       - "8000:8000"

@@ -1,5 +1,5 @@
 """
-Structured logging configuration for Local Brain.
+Structured logging configuration for BrainAi_online.
 """
 import logging
 import os
@@ -7,7 +7,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-def setup_logger(name: str = "local_brain", log_level: str = "INFO") -> logging.Logger:
+def setup_logger(name: str = "brainai_online", log_level: str = "INFO") -> logging.Logger:
     """
     Setup structured logger with file and console handlers.
     
@@ -57,7 +57,7 @@ def setup_logger(name: str = "local_brain", log_level: str = "INFO") -> logging.
         logs_dir = os.path.join(base_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
         
-        log_file = os.path.join(logs_dir, "local_brain.log")
+        log_file = os.path.join(logs_dir, "brainai_online.log")
         file_handler = RotatingFileHandler(
             log_file,
             maxBytes=10 * 1024 * 1024,  # 10 MB

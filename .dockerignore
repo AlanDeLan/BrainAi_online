@@ -31,8 +31,8 @@ PACKAGING_OPTIONS.md
 README_WINDOWS.md
 prompts/PROMPTS_GUIDE.md
 prompts/README.md
-start_local_brain.sh
-com.user.localbrain.plist
+start_brainai_online.sh
+com.user.brainai_online.plist
 run_app.spec
 view_db.py
 backend/
