@@ -127,16 +127,17 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # === IMPORT ROUTES AND STATIC FILES FROM ORIGINAL APP ===
 
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from core.utils import resource_path
 
-# Mount static files
+# Mount static files BEFORE copying routes
 static_dir = resource_path("static")
-templates_dir = resource_path("templates")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Copy all routes from original app
+# Copy all routes from original app (except static mount which is already duplicated)
 for route in original_app.routes:
+    # Skip the static files mount from original app to avoid conflicts
+    if hasattr(route, 'path') and route.path == "/static":
+        continue
     app.router.routes.append(route)
 
 # === AUTHENTICATION ENDPOINTS ===
