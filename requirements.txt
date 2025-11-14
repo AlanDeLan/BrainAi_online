@@ -41,6 +41,7 @@ alembic>=1.13.0  # Database migrations
 
 # === Security & Authentication ===
 passlib[bcrypt]>=1.7.4  # Password hashing
+bcrypt>=4.0.0  # Explicit bcrypt version for Railway compatibility
 python-jose[cryptography]>=3.3.0  # JWT tokens
 python-multipart>=0.0.6  # For form data
 cryptography>=41.0.0  # Encryption
