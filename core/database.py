@@ -5,43 +5,12 @@ Replaces file-based history with database storage.
 import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text, Boolean, JSON
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from core.logger import logger
 
-
-Base = declarative_base()
-
-
-class ChatMessage(Base):
-    """Chat message model."""
-    __tablename__ = "chat_messages"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    chat_id = Column(String(255), index=True, nullable=False)
-    user_id = Column(String(255), index=True, nullable=True)
-    message_index = Column(Integer, nullable=False)
-    role = Column(String(50), nullable=False)  # user, assistant, system
-    content = Column(Text, nullable=False)
-    archetype = Column(String(100), nullable=True)
-    metadata = Column(JSON, nullable=True)  # For additional data
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class UserSession(Base):
-    """User session model."""
-    __tablename__ = "user_sessions"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(String(255), unique=True, index=True, nullable=False)
-    user_id = Column(String(255), index=True, nullable=True)
-    username = Column(String(255), nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    last_activity = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    metadata = Column(JSON, nullable=True)
+# Import Base and models from db_models (avoid duplicate definitions)
+from core.db_models import Base, ChatMessage, UserSession
 
 
 class DatabaseManager:
@@ -107,7 +76,7 @@ class DatabaseManager:
         content: str,
         archetype: Optional[str] = None,
         user_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        msg_metadata: Optional[Dict[str, Any]] = None
     ) -> ChatMessage:
         """
         Save chat message to database.
@@ -118,7 +87,7 @@ class DatabaseManager:
             content: Message content
             archetype: Archetype used
             user_id: User identifier
-            metadata: Additional metadata
+            msg_metadata: Additional metadata
         
         Returns:
             Saved ChatMessage object
@@ -142,7 +111,7 @@ class DatabaseManager:
                 role=role,
                 content=content,
                 archetype=archetype,
-                metadata=metadata
+                msg_metadata=msg_metadata
             )
             
             session.add(message)
@@ -192,7 +161,7 @@ class DatabaseManager:
                     "role": msg.role,
                     "content": msg.content,
                     "archetype": msg.archetype,
-                    "metadata": msg.metadata,
+                    "metadata": msg.msg_metadata,
                     "created_at": msg.created_at.isoformat() if msg.created_at else None
                 }
                 for msg in messages
@@ -290,16 +259,18 @@ def init_database(database_url: str):
     db_manager.init_db()
 
 
-def get_db() -> DatabaseManager:
+def get_db():
     """
-    Get database manager instance.
+    FastAPI dependency to get database session.
     
-    Returns:
-        DatabaseManager instance
-    
-    Raises:
-        RuntimeError: If database not initialized
+    Yields:
+        SQLAlchemy session
     """
     if db_manager is None:
         raise RuntimeError("Database not initialized. Call init_database() first.")
-    return db_manager
+    
+    session = db_manager.get_session()
+    try:
+        yield session
+    finally:
+        session.close()
