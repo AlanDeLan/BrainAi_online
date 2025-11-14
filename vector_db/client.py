@@ -330,8 +330,6 @@ def search_chat_messages(chat_id, query, n_results=5, user_id=None):
                     query_texts=[query],
                     n_results=n_results * 5  # Get more results to compensate for filtering
                 )
-        else:
-            return []
         
         messages = []
         if results.get("ids") and len(results["ids"]) > 0 and len(results["ids"][0]) > 0:
