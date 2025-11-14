@@ -240,7 +240,7 @@ textarea#message-input {
     margin-right: 10px;
     resize: none;
     font-family: inherit;
-    font-size: 1em;
+    font-size: 0.9em;
     line-height: 1.4;
     max-height: 150px;
     overflow-y: auto;

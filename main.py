@@ -50,7 +50,7 @@ def set_shutdown_event(event):
     _shutdown_event = event
 
 app = FastAPI(
-    title="Local Brain",
+    title="BrainAi",
     description="Intelligent local AI assistant with multiple agents and vector database support",
     version="1.0.0",
     docs_url="/docs",  # Swagger UI at /docs
@@ -107,7 +107,7 @@ app.include_router(rada_router)
 app.include_router(auth_router)  # Authentication routes
 
 # Setup logging
-logger.info("Starting Local Brain application")
+logger.info("Starting BrainAi application")
 
 # Use resource_path for static files and templates
 static_dir = resource_path("static")
