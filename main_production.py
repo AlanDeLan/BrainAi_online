@@ -53,13 +53,15 @@ async def lifespan(app: FastAPI):
                 init_database(settings.database_url)
                 logger.info("✅ Database initialized")
                 
-                # Initialize admin user (only if password is not default and DB is ready)
-                if settings.admin_password != "admin123":
-                    logger.info("👤 Initializing admin user...")
-                    init_admin_user(settings.admin_username, settings.admin_password)
-                    logger.info("✅ Admin user initialized")
-                else:
-                    logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
+                # TEMPORARILY DISABLED: Admin user initialization (bcrypt issue on Railway)
+                # Will enable after fixing password hashing
+                logger.warning("⚠️ Admin user initialization DISABLED - single user mode")
+                # if settings.admin_password != "admin123":
+                #     logger.info("👤 Initializing admin user...")
+                #     init_admin_user(settings.admin_username, settings.admin_password)
+                #     logger.info("✅ Admin user initialized")
+                # else:
+                #     logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
             except Exception as db_error:
                 logger.warning(f"⚠️ Database initialization skipped: {db_error}")
                 logger.info("💡 Run migration script: railway run python migrate_db.py")
