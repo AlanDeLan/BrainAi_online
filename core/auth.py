@@ -289,3 +289,49 @@ def invalidate_user_session(db: Session, token: str) -> bool:
     except Exception as e:
         logger.error(f"Error invalidating session: {e}")
         return False
+
+
+def init_admin_user(username: str, password: str):
+    """
+    Initialize admin user if doesn't exist.
+    Creates admin user in database on first startup.
+    
+    Args:
+        username: Admin username
+        password: Admin password
+    """
+    from core.database import get_db
+    
+    try:
+        # Get database session
+        db_gen = get_db()
+        db = next(db_gen)
+        
+        try:
+            # Check if admin user exists
+            existing_user = db.query(DBUser).filter(
+                DBUser.username == username
+            ).first()
+            
+            if existing_user:
+                logger.info(f"Admin user '{username}' already exists")
+                return
+            
+            # Create admin user
+            admin_user = DBUser(
+                email=f"{username}@brainai.local",
+                username=username,
+                password_hash=DBUser.hash_password(password),
+                is_admin=True,
+                is_active=True
+            )
+            
+            db.add(admin_user)
+            db.commit()
+            logger.info(f"✅ Created admin user: {username}")
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize admin user: {e}", exc_info=True)
