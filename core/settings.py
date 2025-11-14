@@ -28,9 +28,16 @@ class Settings(BaseSettings):
     @classmethod
     def clean_database_url(cls, v):
         """Remove Railway template syntax from DATABASE_URL."""
+        import os
+        # Debug logging
+        raw_url = os.environ.get('DATABASE_URL', 'NOT_SET')
+        print(f"DEBUG: Raw DATABASE_URL from env: {raw_url[:50]}...")
+        print(f"DEBUG: Received in validator: {v[:50] if v else 'None'}...")
+        
         if v and v.startswith("${{") and v.endswith("}}"):
             # Extract actual URL from ${{...}}
             v = v[3:-2].strip()
+            print(f"DEBUG: Cleaned to: {v[:50]}...")
         return v
     
     # === AI Provider Settings ===
