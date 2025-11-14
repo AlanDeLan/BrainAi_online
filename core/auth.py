@@ -22,7 +22,7 @@ logger = get_logger()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT Security
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # auto_error=False allows optional auth
 
 # JWT Settings
 SECRET_KEY = os.environ.get("SECRET_KEY", "default-secret-key-change-in-production")
@@ -187,6 +187,30 @@ async def get_current_user_id(
     token = credentials.credentials
     token_data = decode_access_token(token)
     return token_data.user_id
+
+
+async def get_current_user_id_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> Optional[int]:
+    """
+    Optional user_id extraction - returns None if no token provided.
+    Use for backwards compatibility during migration period.
+    
+    Args:
+        credentials: HTTP Bearer credentials (optional)
+    
+    Returns:
+        User ID if token valid, None otherwise
+    """
+    if credentials is None:
+        return None
+    
+    try:
+        token = credentials.credentials
+        token_data = decode_access_token(token)
+        return token_data.user_id
+    except Exception:
+        return None
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[DBUser]:

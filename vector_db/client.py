@@ -40,20 +40,24 @@ vector_db_available = False
 use_faiss = False
 
 
-def get_user_collection(user_id: int):
+def get_user_collection(user_id):
     """
     Get or create collection for specific user.
     
     Args:
-        user_id: User ID
+        user_id: User ID (can be None for legacy mode)
         
     Returns:
-        ChromaDB collection for user
+        ChromaDB collection for user (or default collection if user_id is None)
     """
     if not vector_db_available or client is None:
         return None
     
-    collection_name = f"user_{user_id}_chats"
+    # Legacy mode: use default collection if no user_id
+    if user_id is None:
+        collection_name = "chat_memory_legacy"
+    else:
+        collection_name = f"user_{user_id}_chats"
     
     # Check cache first
     if collection_name in collections_cache:

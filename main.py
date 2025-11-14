@@ -28,7 +28,7 @@ from core.monitoring import (
 from core.utils import resource_path, get_base_directory
 from conferences.rada import router as rada_router
 from core.auth_routes import router as auth_router
-from core.auth import decode_access_token, get_current_user_id
+from core.auth import decode_access_token, get_current_user_id, get_current_user_id_optional
 from core.database import get_db
 import aiofiles
 import yaml
@@ -67,31 +67,34 @@ class AuthMiddleware(BaseHTTPMiddleware):
         public_routes = [
             "/", "/docs", "/redoc", "/openapi.json",
             "/static", "/health", "/favicon.ico",
-            "/api/auth/register", "/api/auth/login"
+            "/api/auth/register", "/api/auth/login",
+            "/process"  # Temporarily public during migration
         ]
         
         # Check if route is public
         path = request.url.path
         is_public = any(path.startswith(route) for route in public_routes)
         
-        # Extract user_id from token if present
+        # Extract user_id from token if present (but don't block if missing on public routes)
         user_id = None
-        if not is_public or request.headers.get("authorization"):
-            auth_header = request.headers.get("authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                token = auth_header.replace("Bearer ", "")
-                try:
-                    token_data = decode_access_token(token)
-                    user_id = token_data.user_id
-                    request.state.user_id = user_id
-                except Exception:
-                    # Invalid token on protected route
-                    if not is_public:
-                        return Response(
-                            content=json.dumps({"detail": "Invalid or expired token"}),
-                            status_code=401,
-                            media_type="application/json"
-                        )
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+            try:
+                token_data = decode_access_token(token)
+                user_id = token_data.user_id
+                request.state.user_id = user_id
+            except Exception as e:
+                # Invalid token - only fail on protected routes
+                if not is_public:
+                    logger.warning(f"Invalid token on protected route: {e}")
+                    return Response(
+                        content=json.dumps({"detail": "Invalid or expired token"}),
+                        status_code=401,
+                        media_type="application/json"
+                    )
+                else:
+                    logger.debug(f"Invalid token on public route, continuing without auth: {e}")
         
         response = await call_next(request)
         return response
@@ -154,12 +157,11 @@ def get_chat_file(chat_id):
 @app.post("/process")
 async def process_text(
     request: Request,
-    user_id: int = Depends(get_current_user_id),
-    db = Depends(get_db)
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
 ):
     """
     Process text with selected archetype.
-    Requires authentication - user_id extracted from JWT token.
+    Optional authentication - works with or without JWT token.
     """
     with TimerContext("process_request"):
         try:
@@ -874,8 +876,8 @@ async def save_ai_provider_config(request: Request):
 
 # --- API for vector database operations ---
 @app.get("/api/vector-db")
-async def get_vector_db_entries(user_id: int = Depends(get_current_user_id)):
-    """Get all entries from vector database for current user."""
+async def get_vector_db_entries(user_id: Optional[int] = Depends(get_current_user_id_optional)):
+    """Get all entries from vector database (optional user filtering)."""
     try:
         from vector_db.client import get_all_chats, is_vector_db_available
         if not is_vector_db_available():
@@ -885,6 +887,10 @@ async def get_vector_db_entries(user_id: int = Depends(get_current_user_id)):
                 "error": "Vector database not available (ChromaDB may not work in EXE mode)",
                 "available": False
             })
+        # If no user_id (no auth), return empty for now (or all chats in legacy mode)
+        if user_id is None:
+            logger.warning("No user_id provided for vector-db, returning empty")
+            return JSONResponse(content={"entries": [], "count": 0, "available": True})
         chats = get_all_chats(user_id=user_id)
         return JSONResponse(content={"entries": chats, "count": len(chats), "available": True})
     except ImportError:
@@ -907,9 +913,9 @@ async def get_vector_db_entries(user_id: int = Depends(get_current_user_id)):
 async def search_vector_db(
     query: str = None,
     n_results: int = 5,
-    user_id: int = Depends(get_current_user_id)
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
 ):
-    """Search vector database for relevant chats (user-specific)."""
+    """Search vector database for relevant chats (optional user filtering)."""
     try:
         if not query:
             raise HTTPException(status_code=400, detail="Query parameter is required")
@@ -922,6 +928,11 @@ async def search_vector_db(
                 "error": "Vector database not available (ChromaDB may not work in EXE mode)",
                 "available": False
             })
+        
+        # If no user_id, return empty results for now
+        if user_id is None:
+            logger.warning("No user_id provided for search, returning empty")
+            return JSONResponse(content={"results": [], "query": query, "available": True})
         
         results = search_chats(query, n_results=n_results, user_id=user_id)
         
