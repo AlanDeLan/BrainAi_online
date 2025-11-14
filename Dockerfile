@@ -1,5 +1,5 @@
 # Production Dockerfile для BrainAi Online
-# Оптимізовано для Render deployment
+# Оптимізовано для DigitalOcean App Platform
 
 FROM python:3.11-slim
 
@@ -21,7 +21,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Створюємо необхідні директорії
-RUN mkdir -p history vector_db_storage
+RUN mkdir -p history logs uploads
+
+# Volume для vector_db_storage буде змонтовано через App Platform
 
 # Відкриваємо порт
 EXPOSE 8000
