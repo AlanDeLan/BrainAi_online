@@ -1,5 +1,5 @@
 # Production Dockerfile для BrainAi Online
-# Оптимізовано для DigitalOcean App Platform
+# Оптимізовано для Railway.app
 
 FROM python:3.11-slim
 
@@ -25,15 +25,14 @@ RUN mkdir -p history logs uploads
 
 # Volume для vector_db_storage буде змонтовано через App Platform
 
-# Відкриваємо порт
+# Відкриваємо порт (Railway використовує змінну $PORT)
 EXPOSE 8000
 
 # Змінні середовища
 ENV PYTHONUNBUFFERED=1
-ENV GOOGLE_API_KEY=""
 
-# Команда запуску (production)
-CMD ["uvicorn", "main_production:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Команда запуску (Railway автоматично підставить $PORT)
+CMD uvicorn main_production:app --host 0.0.0.0 --port ${PORT:-8000}
 
 
 
