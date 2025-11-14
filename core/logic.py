@@ -276,7 +276,7 @@ def log_interaction(archetype_name, user_text, final_prompt, response):
     except Exception as e:
         logger.error(f"Failed to save interaction log: {e}", exc_info=True)
 
-def process_with_archetype(text: str, archetype_name: str, archetypes: dict, chat_history=None, chat_id=None, **kwargs):
+def process_with_archetype(text: str, archetype_name: str, archetypes: dict, chat_history=None, chat_id=None, user_id=None, **kwargs):
     """
     Form prompt, pull relevant context from vector database,
     select appropriate model, generate response and log result.
@@ -287,11 +287,12 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
         archetypes: Dictionary of archetypes
         chat_history: List of previous messages (deprecated - used for file-based history only)
         chat_id: ID of current chat for vector database search
+        user_id: User ID for multi-user database filtering
         **kwargs: Additional parameters (temperature, max_tokens, top_p, top_k)
     """
     if chat_history is None:
         chat_history = []
-    logger.debug(f"Processing request for archetype '{archetype_name}', chat_id={chat_id}")
+    logger.debug(f"Processing request for archetype '{archetype_name}', chat_id={chat_id}, user_id={user_id}")
     
     if not text or not archetype_name:
         error_msg = "Text and archetype must be specified."
@@ -335,11 +336,11 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
     try:
         from vector_db.client import search_chat_messages, search_chats, is_vector_db_available
         
-        if is_vector_db_available():
+        if is_vector_db_available() and user_id is not None:
             # 1. Search for relevant messages in CURRENT chat (for continuity)
             if chat_id:
                 try:
-                    relevant_messages = search_chat_messages(chat_id, text, n_results=3)
+                    relevant_messages = search_chat_messages(chat_id, text, n_results=3, user_id=user_id)
                     if relevant_messages:
                         # Sort by score (distance) - lower is better
                         relevant_messages.sort(key=lambda x: x.get("score", float("inf")))
@@ -352,7 +353,7 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
             # This includes both chat conversations and uploaded files
             try:
                 # Search across all chats and files (excluding current chat if chat_id exists)
-                relevant_chats = search_chats(text, n_results=3)
+                relevant_chats = search_chats(text, n_results=3, user_id=user_id)
                 if relevant_chats:
                     # Filter out current chat if it appears in results
                     if chat_id:
@@ -364,6 +365,11 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
                     logger.debug(f"Found {len(context_chats)} relevant chats/files from entire database")
             except Exception as e:
                 logger.warning(f"Failed to search chats in database: {e}")
+        elif user_id is None:
+            logger.warning("user_id is None, skipping vector DB search for multi-user isolation")
+            
+        else:
+            logger.debug("Vector database not available, skipping context retrieval")
             
             # Combine context from current chat and other chats
             context_parts = []

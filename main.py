@@ -3,10 +3,12 @@ import sys
 import json
 import threading
 from typing import List, Optional
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from core.logic import load_archetypes, process_with_archetype, reload_archetypes
 from core.ai_providers import (
     get_current_provider, 
@@ -26,6 +28,8 @@ from core.monitoring import (
 from core.utils import resource_path, get_base_directory
 from conferences.rada import router as rada_router
 from core.auth_routes import router as auth_router
+from core.auth import decode_access_token, get_current_user_id
+from core.database import get_db
 import aiofiles
 import yaml
 import shutil
@@ -53,6 +57,47 @@ app = FastAPI(
     redoc_url="/redoc",  # ReDoc at /redoc
     openapi_url="/openapi.json"  # OpenAPI schema at /openapi.json
 )
+
+# JWT Authentication Middleware
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Middleware to optionally extract user_id from JWT token."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Public routes that don't require authentication
+        public_routes = [
+            "/", "/docs", "/redoc", "/openapi.json",
+            "/static", "/health", "/favicon.ico",
+            "/api/auth/register", "/api/auth/login"
+        ]
+        
+        # Check if route is public
+        path = request.url.path
+        is_public = any(path.startswith(route) for route in public_routes)
+        
+        # Extract user_id from token if present
+        user_id = None
+        if not is_public or request.headers.get("authorization"):
+            auth_header = request.headers.get("authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "")
+                try:
+                    token_data = decode_access_token(token)
+                    user_id = token_data.user_id
+                    request.state.user_id = user_id
+                except Exception:
+                    # Invalid token on protected route
+                    if not is_public:
+                        return Response(
+                            content=json.dumps({"detail": "Invalid or expired token"}),
+                            status_code=401,
+                            media_type="application/json"
+                        )
+        
+        response = await call_next(request)
+        return response
+
+# Add middleware
+app.add_middleware(AuthMiddleware)
 
 # Include routers
 app.include_router(rada_router)
@@ -107,8 +152,15 @@ def get_chat_file(chat_id):
     return os.path.join(HISTORY_DIR, f"{chat_id}.json")
 
 @app.post("/process")
-async def process_text(request: Request):
-    """Process text with selected archetype."""
+async def process_text(
+    request: Request,
+    user_id: int = Depends(get_current_user_id),
+    db = Depends(get_db)
+):
+    """
+    Process text with selected archetype.
+    Requires authentication - user_id extracted from JWT token.
+    """
     with TimerContext("process_request"):
         try:
             increment_counter("api_requests")
@@ -118,7 +170,7 @@ async def process_text(request: Request):
             remember = data.get("remember", True)
             chat_id = data.get("chat_id")
             
-            logger.info(f"Processing request: archetype={archetype}, chat_id={chat_id}, remember={remember}")
+            logger.info(f"Processing request: user_id={user_id}, archetype={archetype}, chat_id={chat_id}, remember={remember}")
             increment_counter(f"archetype_{archetype}")
             
             if not text or not archetype:
@@ -165,6 +217,7 @@ async def process_text(request: Request):
                 archetypes=archetypes,
                 chat_history=chat_history,
                 chat_id=chat_id if remember else None,
+                user_id=user_id,
                 **model_params
             )
             
@@ -225,7 +278,8 @@ async def process_text(request: Request):
                             message_text=text,
                             role="user",
                             archetype=archetype,
-                            timestamp=timestamp
+                            timestamp=timestamp,
+                            user_id=user_id
                         )
                         
                         # Save assistant response (use message index * 2 + 1 for assistant messages)
@@ -236,7 +290,8 @@ async def process_text(request: Request):
                             message_text=result.get("response", ""),
                             role="assistant",
                             archetype=archetype,
-                            timestamp=timestamp
+                            timestamp=timestamp,
+                            user_id=user_id
                         )
                         
                         logger.debug(f"Messages saved to vector database: {user_msg_id}, {assistant_msg_id}")
@@ -819,8 +874,8 @@ async def save_ai_provider_config(request: Request):
 
 # --- API for vector database operations ---
 @app.get("/api/vector-db")
-async def get_vector_db_entries():
-    """Get all entries from vector database."""
+async def get_vector_db_entries(user_id: int = Depends(get_current_user_id)):
+    """Get all entries from vector database for current user."""
     try:
         from vector_db.client import get_all_chats, is_vector_db_available
         if not is_vector_db_available():
@@ -830,7 +885,7 @@ async def get_vector_db_entries():
                 "error": "Vector database not available (ChromaDB may not work in EXE mode)",
                 "available": False
             })
-        chats = get_all_chats()
+        chats = get_all_chats(user_id=user_id)
         return JSONResponse(content={"entries": chats, "count": len(chats), "available": True})
     except ImportError:
         return JSONResponse(content={
@@ -849,8 +904,12 @@ async def get_vector_db_entries():
         })
 
 @app.get("/api/vector-db/search")
-async def search_vector_db(query: str = None, n_results: int = 5):
-    """Search vector database for relevant chats."""
+async def search_vector_db(
+    query: str = None,
+    n_results: int = 5,
+    user_id: int = Depends(get_current_user_id)
+):
+    """Search vector database for relevant chats (user-specific)."""
     try:
         if not query:
             raise HTTPException(status_code=400, detail="Query parameter is required")
@@ -864,7 +923,7 @@ async def search_vector_db(query: str = None, n_results: int = 5):
                 "available": False
             })
         
-        results = search_chats(query, n_results=n_results)
+        results = search_chats(query, n_results=n_results, user_id=user_id)
         
         # Convert score (distance) to relevance (1 - distance for similarity)
         for result in results:
