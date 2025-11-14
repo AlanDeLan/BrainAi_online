@@ -33,16 +33,19 @@ class Settings(BaseSettings):
         # Check if DATABASE_URL is the placeholder value
         if v and v == "postgresql://user:password@host:port/database":
             print("⚠️  Detected Railway placeholder DATABASE_URL")
-            # Use Railway internal PostgreSQL connection
-            # Railway provides PostgreSQL service at postgres.railway.internal
+            
+            # Try POSTGRES_PASSWORD first
             postgres_password = os.getenv("POSTGRES_PASSWORD", "")
             if postgres_password:
                 railway_url = f"postgresql://postgres:{postgres_password}@postgres.railway.internal:5432/railway"
                 print(f"✅ Using Railway PostgreSQL with password from POSTGRES_PASSWORD")
                 return railway_url
-            else:
-                print("⚠️  POSTGRES_PASSWORD not set, using SQLite")
-                return "sqlite:///./brainai.db"
+            
+            # Hardcoded Railway PostgreSQL URL as fallback
+            # This URL is valid for Railway's internal network
+            railway_url = "postgresql://postgres:KnOUfEQTekkzhllUHmGHgfjiUepSGplT@postgres.railway.internal:5432/railway"
+            print(f"✅ Using hardcoded Railway PostgreSQL URL")
+            return railway_url
         
         # Try Railway-specific variables
         postgres_host = os.getenv("PGHOST", "")
