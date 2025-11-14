@@ -114,52 +114,60 @@ def get_vector_db_type():
         return None
     return "FAISS" if use_faiss else "ChromaDB"
 
-# Try ChromaDB first
-try:
-    logger = get_logger()
-    chromadb, Settings = _import_chromadb()
-    vector_db_dir = os.path.join(get_base_dir(), "vector_db_storage")
-    os.makedirs(vector_db_dir, exist_ok=True)
-    
-    # Try to use PersistentClient first (more reliable with PyInstaller)
-    try:
-        client = chromadb.PersistentClient(path=vector_db_dir)
-    except (Exception, ModuleNotFoundError, ImportError) as e:
-        # Fallback to Client with Settings
-        try:
-            client = chromadb.Client(Settings(persist_directory=vector_db_dir))
-        except (Exception, ModuleNotFoundError, ImportError) as e2:
-            # If both fail, raise the original error
-            raise e
-    
-    # No single collection - we'll create per-user collections on demand
-    vector_db_available = True
-    use_faiss = False
-    logger.info(f"ChromaDB initialized at {vector_db_dir}")
-except (ImportError, ModuleNotFoundError, Exception) as e:
-    logger = get_logger()
-    error_msg = str(e)
-    # Check if it's the Rust module error
-    if "chromadb.api.rust" in error_msg or "No module named" in error_msg:
-        logger.warning("ChromaDB Rust components not available, trying FAISS as fallback...")
-    else:
-        logger.warning(f"ChromaDB not available: {error_msg}, trying FAISS as fallback...")
-    
-    # Try FAISS as fallback
-    try:
-        from vector_db.faiss_client import FAISSVectorDB
-        vector_db_dir = os.path.join(get_base_dir(), "vector_db_storage")
-        faiss_db = FAISSVectorDB(storage_dir=vector_db_dir)
-        vector_db_available = True
-        use_faiss = True
-        logger.info(f"FAISS vector database initialized at {vector_db_dir}")
-    except Exception as faiss_error:
-        logger.error(f"FAISS also failed: {faiss_error}", exc_info=True)
-        logger.warning("Vector database features will be disabled. Chat history will still be saved to files.")
-        client = None
-        faiss_db = None
-        vector_db_available = False
-        use_faiss = False
+# ChromaDB initialization DISABLED - using PostgreSQL for all storage
+# This prevents ChromaDB from initializing on module import
+# All vector DB functions below are kept for backward compatibility but won't be used
+logger = get_logger()
+logger.info("⚠️ ChromaDB initialization skipped - using PostgreSQL for all storage")
+vector_db_available = False
+use_faiss = False
+
+# Original ChromaDB initialization code (DISABLED):
+# try:
+#     logger = get_logger()
+#     chromadb, Settings = _import_chromadb()
+#     vector_db_dir = os.path.join(get_base_dir(), "vector_db_storage")
+#     os.makedirs(vector_db_dir, exist_ok=True)
+#     
+#     # Try to use PersistentClient first (more reliable with PyInstaller)
+#     try:
+#         client = chromadb.PersistentClient(path=vector_db_dir)
+#     except (Exception, ModuleNotFoundError, ImportError) as e:
+#         # Fallback to Client with Settings
+#         try:
+#             client = chromadb.Client(Settings(persist_directory=vector_db_dir))
+#         except (Exception, ModuleNotFoundError, ImportError) as e2:
+#             # If both fail, raise the original error
+#             raise e
+#     
+#     # No single collection - we'll create per-user collections on demand
+#     vector_db_available = True
+#     use_faiss = False
+#     logger.info(f"ChromaDB initialized at {vector_db_dir}")
+# except (ImportError, ModuleNotFoundError, Exception) as e:
+#     logger = get_logger()
+#     error_msg = str(e)
+#     # Check if it's the Rust module error
+#     if "chromadb.api.rust" in error_msg or "No module named" in error_msg:
+#         logger.warning("ChromaDB Rust components not available, trying FAISS as fallback...")
+#     else:
+#         logger.warning(f"ChromaDB not available: {error_msg}, trying FAISS as fallback...")
+#     
+#     # Try FAISS as fallback
+#     try:
+#         from vector_db.faiss_client import FAISSVectorDB
+#         vector_db_dir = os.path.join(get_base_dir(), "vector_db_storage")
+#         faiss_db = FAISSVectorDB(storage_dir=vector_db_dir)
+#         vector_db_available = True
+#         use_faiss = True
+#         logger.info(f"FAISS vector database initialized at {vector_db_dir}")
+#     except Exception as faiss_error:
+#         logger.error(f"FAISS also failed: {faiss_error}", exc_info=True)
+#         logger.warning("Vector database features will be disabled. Chat history will still be saved to files.")
+#         client = None
+#         faiss_db = None
+#         vector_db_available = False
+#         use_faiss = False
 
 def save_chat(chat_id, chat_text, archetypes, timestamp, topic=None, user_id=None):
     """
