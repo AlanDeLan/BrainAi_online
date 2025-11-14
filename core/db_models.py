@@ -9,12 +9,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from passlib.context import CryptContext
+import bcrypt
+import hashlib
 
 Base = declarative_base()
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class User(Base):
@@ -35,16 +33,19 @@ class User(Base):
     chat_messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
     
     def verify_password(self, password: str) -> bool:
-        """Verify password."""
-        return pwd_context.verify(password, self.password_hash)
+        """Verify password using bcrypt with SHA256 pre-hash."""
+        # Pre-hash password with SHA256 to handle any length
+        password_hash_input = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        return bcrypt.checkpw(password_hash_input.encode('utf-8'), self.password_hash.encode('utf-8'))
     
     @staticmethod
     def hash_password(password: str) -> str:
-        """Hash password. Use SHA256 pre-hash to avoid bcrypt 72-byte limit."""
-        import hashlib
+        """Hash password using bcrypt with SHA256 pre-hash to avoid 72-byte limit."""
         # Pre-hash with SHA256 to ensure password is always short enough for bcrypt
         password_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
-        return pwd_context.hash(password_hash)
+        # bcrypt hash the SHA256 hex string (64 chars, well under 72 byte limit)
+        hashed = bcrypt.hashpw(password_hash.encode('utf-8'), bcrypt.gensalt())
+        return hashed.decode('utf-8')
 
 
 class Archetype(Base):
