@@ -315,6 +315,12 @@ def init_admin_user(username: str, password: str):
                 logger.info(f"Admin user '{username}' already exists")
                 return
             
+            # Truncate password to 72 bytes for bcrypt before hashing
+            if len(password.encode('utf-8')) > 72:
+                while len(password.encode('utf-8')) > 72:
+                    password = password[:-1]
+                logger.warning(f"Admin password truncated to {len(password)} characters for bcrypt")
+            
             # Create admin user
             admin_user = DBUser(
                 email=f"{username}@brainai.local",
