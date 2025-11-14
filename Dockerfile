@@ -31,8 +31,8 @@ EXPOSE 8000
 # Змінні середовища
 ENV PYTHONUNBUFFERED=1
 
-# Команда запуску (Railway автоматично підставить $PORT)
-CMD uvicorn main_production:app --host 0.0.0.0 --port ${PORT:-8000}
+# Команда запуску - використовуємо sh для підстановки змінної PORT
+CMD ["sh", "-c", "uvicorn main_production:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
 
 
