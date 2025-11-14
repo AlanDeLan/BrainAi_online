@@ -14,9 +14,7 @@ from sqlalchemy.orm import Session
 
 from core.db_models import User as DBUser, UserSession
 from core.database import get_db
-from core.logger import get_logger
-
-logger = get_logger()
+from core.logger import logger
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
