@@ -5,6 +5,7 @@ Integrates authentication, rate limiting, and database.
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -146,7 +147,6 @@ for route in original_app.routes:
 
 # === AUTHENTICATION ENDPOINTS ===
 
-from datetime import timedelta
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 from core.auth import authenticate_user, create_access_token, get_current_user, User
@@ -198,8 +198,6 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 
 # === SIMPLE HEALTH CHECK (for Railway) ===
-
-from datetime import datetime
 
 
 @app.get("/health")
