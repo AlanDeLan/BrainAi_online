@@ -516,6 +516,84 @@ def get_all_chats(user_id=None):
         logger.error(f"Failed to get all chats from vector database: {e}", exc_info=True)
         return []
 
+
+def get_all_chats_grouped(user_id=None):
+    """
+    Отримує всі чати з векторної бази даних, групуючи повідомлення по chat_id.
+    
+    Args:
+        user_id: ID користувача (обов'язково для multi-user)
+        
+    Returns:
+        List of chat dictionaries grouped by chat_id
+    """
+    logger = get_logger()
+    if not vector_db_available:
+        return []
+    
+    if user_id is None:
+        logger.error("user_id is required for get_all_chats_grouped")
+        return []
+    
+    try:
+        collection = get_user_collection(user_id)
+        if collection is None:
+            return []
+        
+        all_data = collection.get()
+        
+        # Group messages by chat_id
+        chats_dict = {}
+        if all_data.get('ids') and len(all_data['ids']) > 0:
+            for i, msg_id in enumerate(all_data['ids']):
+                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
+                document = all_data['documents'][i] if all_data.get('documents') and i < len(all_data['documents']) else ""
+                
+                chat_id = metadata.get('chat_id', 'unknown')
+                role = metadata.get('role', 'unknown')
+                
+                if chat_id not in chats_dict:
+                    chats_dict[chat_id] = {
+                        'id': chat_id,
+                        'messages': [],
+                        'metadata': {
+                            'archetype': metadata.get('archetype', 'N/A'),
+                            'timestamp': metadata.get('timestamp', 'N/A'),
+                            'user_id': metadata.get('user_id')
+                        }
+                    }
+                
+                chats_dict[chat_id]['messages'].append({
+                    'role': role,
+                    'content': document,
+                    'message_id': msg_id
+                })
+        
+        # Convert to list and add previews
+        chats = []
+        for chat_id, chat_data in chats_dict.items():
+            # Find first user message for preview
+            user_messages = [msg for msg in chat_data['messages'] if msg['role'] == 'user']
+            preview = user_messages[0]['content'][:100] + "..." if user_messages else "..."
+            
+            chats.append({
+                'id': chat_id,
+                'metadata': chat_data['metadata'],
+                'message_count': len(chat_data['messages']),
+                'preview': preview,
+                'messages': chat_data['messages']
+            })
+        
+        # Sort by timestamp (newest first)
+        chats.sort(key=lambda x: x['metadata'].get('timestamp', ''), reverse=True)
+        
+        logger.debug(f"Retrieved {len(chats)} grouped chats for user {user_id}")
+        return chats
+    except Exception as e:
+        logger.error(f"Failed to get grouped chats: {e}", exc_info=True)
+        return []
+
+
 def update_chat(chat_id, chat_text, metadata=None, user_id=None):
     """
     Оновлює чат у векторній базі даних.

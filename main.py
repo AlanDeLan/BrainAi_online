@@ -877,9 +877,9 @@ async def save_ai_provider_config(request: Request):
 # --- API for vector database operations ---
 @app.get("/api/vector-db")
 async def get_vector_db_entries(user_id: Optional[int] = Depends(get_current_user_id_optional)):
-    """Get all entries from vector database (optional user filtering)."""
+    """Get all entries from vector database (grouped by chat_id)."""
     try:
-        from vector_db.client import get_all_chats, is_vector_db_available
+        from vector_db.client import get_all_chats_grouped, is_vector_db_available
         if not is_vector_db_available():
             return JSONResponse(content={
                 "entries": [],
@@ -887,11 +887,12 @@ async def get_vector_db_entries(user_id: Optional[int] = Depends(get_current_use
                 "error": "Vector database not available (ChromaDB may not work in EXE mode)",
                 "available": False
             })
-        # If no user_id (no auth), return empty for now (or all chats in legacy mode)
+        # If no user_id (no auth), return empty
         if user_id is None:
             logger.warning("No user_id provided for vector-db, returning empty")
             return JSONResponse(content={"entries": [], "count": 0, "available": True})
-        chats = get_all_chats(user_id=user_id)
+        
+        chats = get_all_chats_grouped(user_id=user_id)
         return JSONResponse(content={"entries": chats, "count": len(chats), "available": True})
     except ImportError:
         return JSONResponse(content={
@@ -963,90 +964,165 @@ async def search_vector_db(
 
 
 @app.get("/api/vector-db/{chat_id}")
-async def get_vector_db_entry(chat_id: str):
-    """Get specific entry from vector database by ID."""
+async def get_vector_db_entry(chat_id: str, user_id: Optional[int] = Depends(get_current_user_id_optional)):
+    """Get specific chat from vector database by chat_id (grouped messages)."""
     try:
-        from vector_db.client import collection, faiss_db, is_vector_db_available, use_faiss
-        if not is_vector_db_available():
-            raise HTTPException(
-                status_code=503,
-                detail="Vector database not available"
-            )
+        from vector_db.client import get_user_collection, is_vector_db_available
         
-        if use_faiss and faiss_db:
-            # Use FAISS
-            result = faiss_db.get(ids=[chat_id])
-        elif collection:
-            # Use ChromaDB
-            result = collection.get(ids=[chat_id])
-        else:
+        if not is_vector_db_available():
             raise HTTPException(status_code=503, detail="Vector database not available")
         
-        if not result.get('ids') or len(result['ids']) == 0:
-            raise HTTPException(status_code=404, detail="Entry not found")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
         
-        metadata = result['metadatas'][0] if result.get('metadatas') and len(result['metadatas']) > 0 else {}
-        document = result['documents'][0] if result.get('documents') and len(result['documents']) > 0 else ""
+        collection = get_user_collection(user_id)
+        if collection is None:
+            raise HTTPException(status_code=503, detail="Failed to get user collection")
+        
+        # Get all messages for this chat_id
+        all_data = collection.get()
+        
+        messages = []
+        chat_metadata = {}
+        
+        if all_data.get('ids'):
+            for i, msg_id in enumerate(all_data['ids']):
+                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
+                document = all_data['documents'][i] if all_data.get('documents') and i < len(all_data['documents']) else ""
+                
+                if metadata.get('chat_id') == chat_id:
+                    messages.append({
+                        'role': metadata.get('role', 'unknown'),
+                        'content': document,
+                        'message_id': msg_id,
+                        'timestamp': metadata.get('timestamp', '')
+                    })
+                    
+                    # Save first message metadata as chat metadata
+                    if not chat_metadata:
+                        chat_metadata = {
+                            'archetype': metadata.get('archetype', 'N/A'),
+                            'timestamp': metadata.get('timestamp', 'N/A'),
+                            'user_id': metadata.get('user_id')
+                        }
+        
+        if not messages:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        # Sort messages by timestamp
+        messages.sort(key=lambda x: x.get('timestamp', ''))
+        
+        # Create document preview
+        user_messages = [msg for msg in messages if msg['role'] == 'user']
+        document = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
         
         return JSONResponse(content={
             "id": chat_id,
-            "metadata": metadata,
-            "document": document
+            "metadata": chat_metadata,
+            "document": document,
+            "messages": messages,
+            "message_count": len(messages)
         })
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Vector database module not available")
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error getting chat {chat_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error reading entry: {str(e)}")
 
 @app.delete("/api/vector-db/{chat_id}")
-async def delete_vector_db_entry(chat_id: str):
-    """Delete entry from vector database by ID."""
+async def delete_vector_db_entry(chat_id: str, user_id: Optional[int] = Depends(get_current_user_id_optional)):
+    """Delete all messages for a chat from vector database."""
     try:
-        from vector_db.client import delete_chat, is_vector_db_available
+        from vector_db.client import get_user_collection, is_vector_db_available
+        
         if not is_vector_db_available():
-            raise HTTPException(
-                status_code=503,
-                detail="Vector database not available"
-            )
-        delete_chat(chat_id)
-        return JSONResponse(content={"status": "success", "message": f"Entry {chat_id} deleted"})
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Vector database module not available")
+            raise HTTPException(status_code=503, detail="Vector database not available")
+        
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
+        collection = get_user_collection(user_id)
+        if collection is None:
+            raise HTTPException(status_code=503, detail="Failed to get user collection")
+        
+        # Get all messages for this chat
+        all_data = collection.get()
+        message_ids_to_delete = []
+        
+        if all_data.get('ids'):
+            for i, msg_id in enumerate(all_data['ids']):
+                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
+                
+                if metadata.get('chat_id') == chat_id:
+                    message_ids_to_delete.append(msg_id)
+        
+        if not message_ids_to_delete:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        # Delete all messages
+        collection.delete(ids=message_ids_to_delete)
+        
+        logger.info(f"Deleted {len(message_ids_to_delete)} messages from chat {chat_id} for user {user_id}")
+        
+        return JSONResponse(content={
+            "status": "success", 
+            "message": f"Chat {chat_id} deleted ({len(message_ids_to_delete)} messages)"
+        })
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error deleting chat {chat_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {str(e)}")
 
 @app.post("/api/vector-db/{chat_id}")
-async def update_vector_db_entry(chat_id: str, request: Request):
-    """Update entry in vector database."""
+async def update_vector_db_entry(chat_id: str, request: Request, user_id: Optional[int] = Depends(get_current_user_id_optional)):
+    """Update entry in vector database (updates assistant response)."""
     try:
-        from vector_db.client import update_chat, is_vector_db_available
+        from vector_db.client import get_user_collection, is_vector_db_available
+        
         if not is_vector_db_available():
-            raise HTTPException(
-                status_code=503,
-                detail="Vector database not available"
-            )
+            raise HTTPException(status_code=503, detail="Vector database not available")
+        
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
         
         data = await request.json()
         
         document = data.get("document")
-        metadata = data.get("metadata", {})
-        
         if not document:
             raise HTTPException(status_code=400, detail="Field 'document' is required")
         
-        # Update entry (or create new if doesn't exist)
-        update_chat(chat_id, document, metadata)
+        collection = get_user_collection(user_id)
+        if collection is None:
+            raise HTTPException(status_code=503, detail="Failed to get user collection")
+        
+        # Get all messages for this chat
+        all_data = collection.get()
+        assistant_messages = []
+        
+        if all_data.get('ids'):
+            for i, msg_id in enumerate(all_data['ids']):
+                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
+                
+                if metadata.get('chat_id') == chat_id and metadata.get('role') == 'assistant':
+                    assistant_messages.append(msg_id)
+        
+        if not assistant_messages:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        # Update the first assistant message (response)
+        collection.update(
+            ids=[assistant_messages[0]],
+            documents=[document]
+        )
+        
+        logger.info(f"Updated chat {chat_id} for user {user_id}")
         
         return JSONResponse(content={"status": "success", "message": f"Entry {chat_id} updated"})
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Vector database module not available")
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error updating chat {chat_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error updating entry: {str(e)}")
 
 # --- API for file upload and processing ---
