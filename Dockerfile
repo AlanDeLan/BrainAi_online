@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копіюємо весь проект
 COPY . .
 
+# КРИТИЧНО: Видаляємо весь Python cache щоб уникнути використання старого коду
+RUN find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+RUN find . -type f -name "*.pyc" -delete 2>/dev/null || true
+
 # Створюємо необхідні директорії
 RUN mkdir -p logs uploads
 
@@ -33,6 +37,7 @@ EXPOSE 8000
 
 # Змінні середовища
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # Команда запуску через Python скрипт
 CMD ["python", "railway_start.py"]
