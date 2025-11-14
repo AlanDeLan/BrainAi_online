@@ -47,6 +47,9 @@ async def lifespan(app: FastAPI):
         if settings.is_production and settings.database_url.startswith("postgresql"):
             try:
                 logger.info("📊 Initializing PostgreSQL database...")
+                # Log database URL (masked password)
+                masked_url = settings.database_url.split('@')[1] if '@' in settings.database_url else 'invalid URL'
+                logger.info(f"Database host: {masked_url}")
                 init_database(settings.database_url)
                 logger.info("✅ Database initialized")
                 
