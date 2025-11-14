@@ -15,14 +15,14 @@ class Settings(BaseSettings):
     app_name: str = "BrainAi"
     environment: str = Field(default="development", alias="ENVIRONMENT")
     debug: bool = Field(default=False, alias="DEBUG")
-    secret_key: str = Field(..., alias="SECRET_KEY")  # Required
+    secret_key: str = Field(default="dev-secret-key-change-in-production", alias="SECRET_KEY")
     
     # === Server Settings ===
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
     
     # === Database Settings ===
-    database_url: str = Field(..., alias="DATABASE_URL")  # Required for production
+    database_url: str = Field(default="sqlite:///./brainai.db", alias="DATABASE_URL")  # SQLite fallback
     
     # === AI Provider Settings ===
     ai_provider: str = Field(default="google_ai", alias="AI_PROVIDER")
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
     
     # === Security Settings ===
-    session_secret: str = Field(..., alias="SESSION_SECRET")  # Required
+    session_secret: str = Field(default="dev-session-secret-change-in-production", alias="SESSION_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_expiration_hours: int = Field(default=24, alias="JWT_EXPIRATION_HOURS")
     
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     
     # === Admin Settings ===
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
-    admin_password: str = Field(..., alias="ADMIN_PASSWORD")  # Required
+    admin_password: str = Field(default="admin123", alias="ADMIN_PASSWORD")  # Default for development
     
     model_config = SettingsConfigDict(
         env_file=".env",
