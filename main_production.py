@@ -111,13 +111,14 @@ async def health_check():
 
 # === MIDDLEWARE CONFIGURATION ===
 
-# 1. Trusted Host (security)
-if settings.is_production:
-    allowed_hosts = [origin.replace("https://", "").replace("http://", "") for origin in settings.cors_origins]
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=allowed_hosts + ["*.onrender.com"]
-    )
+# 1. Trusted Host (security) - Disabled for Railway
+# Railway health checks come from internal hosts, so we can't restrict by hostname
+# if settings.is_production:
+#     allowed_hosts = [origin.replace("https://", "").replace("http://", "") for origin in settings.cors_origins]
+#     app.add_middleware(
+#         TrustedHostMiddleware,
+#         allowed_hosts=allowed_hosts + ["*.onrender.com"]
+#     )
 
 # 2. CORS (Cross-Origin Resource Sharing)
 app.add_middleware(
