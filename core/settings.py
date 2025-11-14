@@ -103,7 +103,12 @@ class Settings(BaseSettings):
     @field_validator("admin_password")
     @classmethod
     def truncate_admin_password(cls, v):
-        """Truncate admin password to 72 bytes for bcrypt."""
+        """Truncate admin password to 72 bytes for bcrypt. Use hardcoded for Railway."""
+        # For Railway, always use hardcoded password to avoid env var issues
+        if v and v.startswith("postgresql://user:password"):  # Railway placeholder detected
+            return "SecureAdmin2024!"
+        
+        # Otherwise truncate if too long
         if len(v.encode('utf-8')) > 72:
             while len(v.encode('utf-8')) > 72:
                 v = v[:-1]
