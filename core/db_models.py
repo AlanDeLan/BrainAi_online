@@ -41,9 +41,12 @@ class User(Base):
     @staticmethod
     def hash_password(password: str) -> str:
         """Hash password. Truncate to 72 bytes for bcrypt compatibility."""
-        # Bcrypt has 72 byte limit
-        password_bytes = password.encode('utf-8')[:72]
-        return pwd_context.hash(password_bytes.decode('utf-8', errors='ignore'))
+        # Bcrypt has 72 byte limit - truncate before encoding
+        if len(password.encode('utf-8')) > 72:
+            # Safely truncate by characters, not bytes
+            while len(password.encode('utf-8')) > 72:
+                password = password[:-1]
+        return pwd_context.hash(password)
 
 
 class Archetype(Base):
