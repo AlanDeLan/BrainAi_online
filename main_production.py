@@ -124,7 +124,16 @@ app.add_middleware(
 # 4. GZip Compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# === IMPORT ROUTES FROM ORIGINAL APP ===
+# === IMPORT ROUTES AND STATIC FILES FROM ORIGINAL APP ===
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from core.utils import resource_path
+
+# Mount static files
+static_dir = resource_path("static")
+templates_dir = resource_path("templates")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Copy all routes from original app
 for route in original_app.routes:
