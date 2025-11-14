@@ -338,6 +338,94 @@ async def debug_vector_db(db: Session = Depends(get_db)):
         return {"error": str(e)}
 
 
+@app.get("/api/history/db")
+async def get_history_from_db(db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id_optional)):
+    """
+    Get chat history from PostgreSQL database (persists across deploys).
+    Groups messages by chat_id.
+    """
+    from core.db_models import ChatMessage
+    from sqlalchemy import func
+    
+    if user_id is None:
+        return {"chats": [], "message": "Authentication required"}
+    
+    try:
+        # Get distinct chat_ids for this user with metadata
+        chats_query = db.query(
+            ChatMessage.chat_id,
+            func.min(ChatMessage.created_at).label('first_message'),
+            func.max(ChatMessage.created_at).label('last_message'),
+            func.count(ChatMessage.id).label('message_count')
+        ).filter(
+            ChatMessage.user_id == user_id
+        ).group_by(
+            ChatMessage.chat_id
+        ).order_by(
+            func.max(ChatMessage.created_at).desc()
+        ).all()
+        
+        chats = []
+        for chat in chats_query:
+            # Get first user message for preview
+            first_user_msg = db.query(ChatMessage).filter(
+                ChatMessage.chat_id == chat.chat_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.role == 'user'
+            ).order_by(ChatMessage.message_index).first()
+            
+            preview = first_user_msg.content[:100] if first_user_msg else "..."
+            
+            chats.append({
+                "chat_id": chat.chat_id,
+                "first_message_at": chat.first_message.isoformat(),
+                "last_message_at": chat.last_message.isoformat(),
+                "message_count": chat.message_count,
+                "preview": preview
+            })
+        
+        return {"chats": chats, "total": len(chats)}
+    except Exception as e:
+        logger.error(f"Error fetching history from DB: {e}", exc_info=True)
+        return {"error": str(e), "chats": []}
+
+
+@app.get("/api/history/db/{chat_id}")
+async def get_chat_from_db(chat_id: str, db: Session = Depends(get_db), user_id: Optional[int] = Depends(get_current_user_id_optional)):
+    """Get specific chat messages from database."""
+    from core.db_models import ChatMessage
+    
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    try:
+        messages = db.query(ChatMessage).filter(
+            ChatMessage.chat_id == chat_id,
+            ChatMessage.user_id == user_id
+        ).order_by(ChatMessage.message_index).all()
+        
+        if not messages:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        return {
+            "chat_id": chat_id,
+            "messages": [
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "timestamp": msg.created_at.isoformat(),
+                    "message_index": msg.message_index
+                }
+                for msg in messages
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching chat from DB: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # === ERROR HANDLERS ===
 
 from fastapi import Request
