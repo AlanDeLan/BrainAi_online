@@ -99,6 +99,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# === HEALTH CHECK (must be BEFORE middleware) ===
+
+@app.get("/health")
+async def health_check():
+    """Simple health check for Railway - bypasses all middleware."""
+    return {"status": "ok"}
+
 # === MIDDLEWARE CONFIGURATION ===
 
 # 1. Trusted Host (security)
@@ -162,49 +169,32 @@ async def login(request: LoginRequest):
     Login endpoint - получить JWT токен.
     
     Используйте логин и пароль из Environment Variables:
-    - Username: ADMIN_USERNAME
+    - Email: ADMIN_USERNAME (or any registered email)
     - Password: ADMIN_PASSWORD
     """
-    user = authenticate_user(request.username, request.password)
+    user = authenticate_user(request.email, request.password)
     
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     # Create access token
     access_token_expires = timedelta(hours=settings.jwt_expiration_hours)
     access_token = create_access_token(
-        data={"sub": user.username},
+        data={"sub": user.email},
         secret_key=settings.secret_key,
         algorithm=settings.jwt_algorithm,
         expires_delta=access_token_expires
     )
     
-    return TokenResponse(
+    return Token(
         access_token=access_token,
         token_type="bearer",
-        expires_in=int(access_token_expires.total_seconds())
-    )
-
-
-# === SIMPLE HEALTH CHECK (for Railway) ===
-
-from fastapi import Request
-from fastapi.responses import JSONResponse as FastAPIJSONResponse
-
-
-@app.get("/health")
-async def health_check():
-    """
-    Simple health check endpoint for Railway.
-    Returns 200 OK if the app is running.
-    """
-    return FastAPIJSONResponse(
-        status_code=200,
-        content={"status": "ok"}
+        user_id=user.id,
+        email=user.email
     )
 
 
