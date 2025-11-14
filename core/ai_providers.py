@@ -23,9 +23,24 @@ _provider_config: Dict[str, Any] = {}
 _google_ai_chat_sessions: Dict[tuple, Any] = {}
 
 def load_provider_config():
-    """Load AI provider configuration from .env file."""
+    """Load AI provider configuration from settings or .env file."""
     global _current_provider, _provider_config
     
+    # Try to load from settings first (production)
+    try:
+        from core.settings import settings
+        _provider_config = {
+            'google_api_key': settings.google_api_key,
+            'openai_api_key': settings.openai_api_key,
+            'openai_base_url': settings.openai_base_url,
+        }
+        provider_name = settings.ai_provider.lower()
+        _current_provider = AIProvider(provider_name)
+        return
+    except Exception:
+        pass  # Fallback to .env loading
+    
+    # Fallback: load from .env file (development)
     from dotenv import dotenv_values, load_dotenv
     
     base_dir = get_base_directory()
