@@ -61,6 +61,15 @@ class ProcessResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class RegisterRequest(BaseModel):
+    """User registration request."""
+    email: str = Field(..., min_length=5, max_length=255, pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    username: str = Field(..., min_length=3, max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
+    password: str = Field(..., min_length=8, max_length=100)
+    
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
 class LoginRequest(BaseModel):
     """Login request model."""
     username: str = Field(..., min_length=3, max_length=100)
@@ -78,9 +87,14 @@ class TokenResponse(BaseModel):
 
 class UserInfo(BaseModel):
     """User information model."""
+    id: int
     username: str
+    email: str
     is_active: bool
     is_admin: bool
+    created_at: datetime
+    archetypes_count: int = 0
+    max_archetypes: int = 2
 
 
 class ChatHistoryItem(BaseModel):
@@ -142,6 +156,37 @@ class ArchetypeConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Field cannot be empty")
         return v.strip()
+
+
+class ArchetypeResponse(BaseModel):
+    """Archetype response model."""
+    id: int
+    name: str
+    system_prompt: str
+    model_name: str
+    temperature: float
+    max_tokens: int
+    is_public: bool
+    uses_count: int
+    created_at: datetime
+    is_owner: bool = True
+
+
+class CreateArchetypeRequest(BaseModel):
+    """Create archetype request."""
+    name: str = Field(..., min_length=1, max_length=200)
+    system_prompt: str = Field(..., min_length=10, max_length=10000)
+    model_name: str = Field(default="gemini-1.5-flash", max_length=100)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1, le=32000)
+    
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+
+class ShareArchetypeRequest(BaseModel):
+    """Share archetype request."""
+    archetype_id: int
+    is_public: bool
 
 
 class ArchetypesConfigRequest(BaseModel):
