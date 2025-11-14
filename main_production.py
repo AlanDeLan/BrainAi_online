@@ -150,10 +150,10 @@ for route in original_app.routes:
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 from core.auth import authenticate_user, create_access_token, get_current_user
-from core.models import LoginRequest, TokenResponse, UserInfo
+from core.models import LoginRequest, Token, UserInfo
 
 
-@app.post("/api/auth/login", response_model=TokenResponse)
+@app.post("/api/auth/login", response_model=Token)
 async def login(request: LoginRequest):
     """
     Login endpoint - получить JWT токен.

@@ -36,7 +36,7 @@ def load_provider_config():
         }
         provider_name = settings.ai_provider.lower()
         _current_provider = AIProvider(provider_name)
-        return
+        return _current_provider, _provider_config
     except Exception:
         pass  # Fallback to .env loading
     
