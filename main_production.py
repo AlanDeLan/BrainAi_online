@@ -164,14 +164,16 @@ for route in original_app.routes:
 
 # === AUTHENTICATION ENDPOINTS ===
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
+from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from core.auth import authenticate_user, create_access_token, get_current_user
 from core.models import LoginRequest, Token, UserInfo
+from core.database import get_db
 
 
 @app.post("/api/auth/login", response_model=Token)
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
     """
     Login endpoint - получить JWT токен.
     
@@ -179,7 +181,7 @@ async def login(request: LoginRequest):
     - Email: ADMIN_USERNAME (or any registered email)
     - Password: ADMIN_PASSWORD
     """
-    user = authenticate_user(request.email, request.password)
+    user = authenticate_user(db, request.email, request.password)
     
     if not user:
         raise HTTPException(
@@ -189,13 +191,7 @@ async def login(request: LoginRequest):
         )
     
     # Create access token
-    access_token_expires = timedelta(hours=settings.jwt_expiration_hours)
-    access_token = create_access_token(
-        data={"sub": user.email},
-        secret_key=settings.secret_key,
-        algorithm=settings.jwt_algorithm,
-        expires_delta=access_token_expires
-    )
+    access_token = create_access_token(user.id, user.email)
     
     return Token(
         access_token=access_token,
@@ -212,17 +208,15 @@ class RegisterRequest(BaseModel):
 
 
 @app.post("/api/auth/register", response_model=Token)
-async def register(request: RegisterRequest):
+async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """
     Register new user endpoint.
     """
-    from core.database import get_session
     from core.db_models import User
     
-    session = get_session()
     try:
         # Check if user already exists
-        existing_user = session.query(User).filter(
+        existing_user = db.query(User).filter(
             (User.email == request.email) | (User.username == request.username)
         ).first()
         
@@ -239,18 +233,12 @@ async def register(request: RegisterRequest):
             password_hash=User.hash_password(request.password)
         )
         
-        session.add(new_user)
-        session.commit()
-        session.refresh(new_user)
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
         
         # Create access token
-        access_token_expires = timedelta(hours=settings.jwt_expiration_hours)
-        access_token = create_access_token(
-            data={"sub": new_user.email},
-            secret_key=settings.secret_key,
-            algorithm=settings.jwt_algorithm,
-            expires_delta=access_token_expires
-        )
+        access_token = create_access_token(new_user.id, new_user.email)
         
         return Token(
             access_token=access_token,
@@ -258,8 +246,15 @@ async def register(request: RegisterRequest):
             user_id=new_user.id,
             email=new_user.email
         )
-    finally:
-        session.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Registration error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed"
+        )
 
 
 # === ERROR HANDLERS ===

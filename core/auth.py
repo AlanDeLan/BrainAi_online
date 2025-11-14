@@ -229,7 +229,8 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[DBUser
             logger.warning(f"User not found: {email}")
             return None
         
-        if not verify_password(password, user.password_hash):
+        # Use native bcrypt verification from User model
+        if not user.verify_password(password):
             logger.warning(f"Invalid password for user: {email}")
             return None
         
