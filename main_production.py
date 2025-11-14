@@ -101,10 +101,12 @@ app = FastAPI(
 
 # === HEALTH CHECK (must be BEFORE middleware) ===
 
-@app.get("/health")
+from starlette.responses import PlainTextResponse
+
+@app.get("/health", response_class=PlainTextResponse)
 async def health_check():
-    """Simple health check for Railway - bypasses all middleware."""
-    return {"status": "ok"}
+    """Simple health check for Railway."""
+    return "ok"
 
 # === MIDDLEWARE CONFIGURATION ===
 
