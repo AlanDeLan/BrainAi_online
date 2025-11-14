@@ -30,6 +30,14 @@ class Settings(BaseSettings):
         """Build DATABASE_URL from Railway environment or individual components."""
         import os
         
+        # DEBUG: Show ALL environment variables starting with PG or DATABASE
+        print("\n=== DATABASE ENVIRONMENT VARIABLES DEBUG ===")
+        for key, value in os.environ.items():
+            if key.startswith(("PG", "DATABASE", "POSTGRES")):
+                masked = value[:50] + "..." if len(value) > 50 else value
+                print(f"  {key} = {masked}")
+        print("=== END DEBUG ===\n")
+        
         # Try Railway-specific variables first
         postgres_host = os.getenv("PGHOST", "")
         postgres_port = os.getenv("PGPORT", "")
