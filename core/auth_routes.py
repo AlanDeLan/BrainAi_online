@@ -22,9 +22,7 @@ from core.auth import (
     get_current_user_id,
     security
 )
-from core.logger import get_logger
-
-logger = get_logger()
+from core.logger import logger
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
