@@ -1593,7 +1593,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const params = new URLSearchParams();
                 params.append('query', query);
                 params.append('n_results', nResults.toString());
-                const response = await fetch(`/api/vector-db/search?${params}`);
+                const response = await fetch(`/api/vector-db/search?${params}`, {
+                    headers: getAuthHeaders()
+                });
                 data = await response.json();
                 // Convert search results to entries format
                 data.entries = data.results.map(result => ({
@@ -1609,7 +1611,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
             } else {
                 // Load all entries
-                const response = await fetch('/api/vector-db');
+                const response = await fetch('/api/vector-db', {
+                    headers: getAuthHeaders()
+                });
                 data = await response.json();
             }
             
@@ -1665,7 +1669,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function viewVectorDbEntry(chatId) {
         try {
-            const response = await fetch(`/api/vector-db/${chatId}`);
+            const response = await fetch(`/api/vector-db/${chatId}`, {
+                headers: getAuthHeaders()
+            });
             const data = await response.json();
             
             elements.vectorDbEntryView.innerHTML = `
@@ -1689,7 +1695,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function editVectorDbEntry(chatId) {
         try {
-            const response = await fetch(`/api/vector-db/${chatId}`);
+            const response = await fetch(`/api/vector-db/${chatId}`, {
+                headers: getAuthHeaders()
+            });
             const data = await response.json();
             
             elements.vectorDbEntryView.innerHTML = `
@@ -1757,7 +1765,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             const response = await fetch(`/api/vector-db/${chatId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: getAuthHeaders()
             });
             
             const data = await response.json();
