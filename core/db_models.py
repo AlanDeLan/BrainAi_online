@@ -84,7 +84,7 @@ class ChatMessage(Base):
     message_index = Column(Integer, nullable=False)
     role = Column(String(50), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    msg_metadata = Column(JSON, nullable=True)  # Renamed from 'metadata' (reserved)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     # Relationships
