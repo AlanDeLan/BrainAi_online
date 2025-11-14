@@ -5,17 +5,24 @@
 services:
   # Main Web Service
   - type: web
-    name: brainai-production
+    name: brainai-online
     env: python
-    region: frankfurt  # Найближче до України
-    plan: starter  # $7/місяць (free tier має обмеження)
+    runtime: python-3.11
+    region: frankfurt
+    plan: free
     branch: main
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: |
-      uvicorn main_production:app --host 0.0.0.0 --port $PORT --workers 2 --log-level info
+      chmod +x start.sh && ./start.sh
     healthCheckPath: /health
+    
+    # Disk for persistent storage (vector DB)
+    disk:
+      name: vector-db-storage
+      mountPath: /opt/render/project/src/vector_db_storage
+      sizeGB: 1
     
     # Auto-deploy on push
     autoDeploy: true

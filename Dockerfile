@@ -1,5 +1,5 @@
-# Dockerfile для Local Brain
-# Опціональний спосіб упаковки для кроссплатформенного розповсюдження
+# Production Dockerfile для BrainAi Online
+# Оптимізовано для Render deployment
 
 FROM python:3.11-slim
 
@@ -30,8 +30,8 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 ENV GOOGLE_API_KEY=""
 
-# Команда запуску
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Команда запуску (production)
+CMD ["uvicorn", "main_production:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 
 
 
