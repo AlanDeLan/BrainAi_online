@@ -72,17 +72,18 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """Login request model."""
-    username: str = Field(..., min_length=3, max_length=100)
-    password: str = Field(..., min_length=6, max_length=100)
+    email: str = Field(..., min_length=5, max_length=255)
+    password: str = Field(..., min_length=8, max_length=100)
     
     model_config = ConfigDict(str_strip_whitespace=True)
 
 
-class TokenResponse(BaseModel):
-    """Token response model."""
+class Token(BaseModel):
+    """JWT Token response model."""
     access_token: str
     token_type: str = "bearer"
-    expires_in: int  # seconds
+    user_id: int
+    email: str
 
 
 class UserInfo(BaseModel):
@@ -90,8 +91,6 @@ class UserInfo(BaseModel):
     id: int
     username: str
     email: str
-    is_active: bool
-    is_admin: bool
     created_at: datetime
     archetypes_count: int = 0
     max_archetypes: int = 2
