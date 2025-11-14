@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     # === Database Settings ===
     database_url: str = Field(default="sqlite:///./brainai.db", alias="DATABASE_URL")  # SQLite fallback
     
+    @field_validator("database_url")
+    @classmethod
+    def clean_database_url(cls, v):
+        """Remove Railway template syntax from DATABASE_URL."""
+        if v and v.startswith("${{") and v.endswith("}}"):
+            # Extract actual URL from ${{...}}
+            v = v[3:-2].strip()
+        return v
+    
     # === AI Provider Settings ===
     ai_provider: str = Field(default="google_ai", alias="AI_PROVIDER")
     google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
