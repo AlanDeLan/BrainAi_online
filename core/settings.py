@@ -98,7 +98,16 @@ class Settings(BaseSettings):
     
     # === Admin Settings ===
     admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
-    admin_password: str = Field(default="admin123", alias="ADMIN_PASSWORD")  # Default for development
+    admin_password: str = Field(default="SecureAdmin2024!", alias="ADMIN_PASSWORD")
+    
+    @field_validator("admin_password")
+    @classmethod
+    def truncate_admin_password(cls, v):
+        """Truncate admin password to 72 bytes for bcrypt."""
+        if len(v.encode('utf-8')) > 72:
+            while len(v.encode('utf-8')) > 72:
+                v = v[:-1]
+        return v
     
     model_config = SettingsConfigDict(
         env_file=".env",
