@@ -24,6 +24,10 @@
                 <button id="history-btn">Історія</button>
             </div>
             <div class="header-menu">
+                <div class="user-info">
+                    <span id="user-email" class="user-email"></span>
+                    <button id="logout-btn" class="logout-btn hidden">Вийти</button>
+                </div>
                 <div class="language-switcher">
                     <button id="lang-uk-btn" class="lang-btn active" data-lang="uk" title="Українська">UA</button>
                     <button id="lang-en-btn" class="lang-btn" data-lang="en" title="English">EN</button>
@@ -209,6 +213,44 @@
                         <button id="reset-stats-btn" class="config-btn-save">Скинути статистику</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal-content auth-modal-content">
+            <h2 id="auth-modal-title">Вхід до системи</h2>
+            <div id="auth-tabs">
+                <button id="login-tab" class="auth-tab active">Вхід</button>
+                <button id="register-tab" class="auth-tab">Реєстрація</button>
+            </div>
+            <div id="login-form" class="auth-form">
+                <div class="auth-form-group">
+                    <label for="login-email">Email:</label>
+                    <input type="email" id="login-email" placeholder="admin@brainai.local" required>
+                </div>
+                <div class="auth-form-group">
+                    <label for="login-password">Пароль:</label>
+                    <input type="password" id="login-password" placeholder="Введіть пароль" required>
+                </div>
+                <button id="login-submit-btn" class="auth-btn">Увійти</button>
+                <div id="login-message" class="auth-message"></div>
+            </div>
+            <div id="register-form" class="auth-form hidden">
+                <div class="auth-form-group">
+                    <label for="register-username">Імʼя користувача:</label>
+                    <input type="text" id="register-username" placeholder="Введіть імʼя" required>
+                </div>
+                <div class="auth-form-group">
+                    <label for="register-email">Email:</label>
+                    <input type="email" id="register-email" placeholder="your@email.com" required>
+                </div>
+                <div class="auth-form-group">
+                    <label for="register-password">Пароль:</label>
+                    <input type="password" id="register-password" placeholder="Мінімум 8 символів" required>
+                </div>
+                <button id="register-submit-btn" class="auth-btn">Зареєструватись</button>
+                <div id="register-message" class="auth-message"></div>
             </div>
         </div>
     </div>

@@ -1,3 +1,7 @@
+// --- Authentication State ---
+let authToken = localStorage.getItem('authToken');
+let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+
 // --- Кешування DOM елементів ---
 const elements = {
     form: document.getElementById('chat-form'),
@@ -63,10 +67,153 @@ const elements = {
     uploadFileStatus: document.getElementById('upload-file-status'),
     uploadFileProgressBar: document.getElementById('upload-file-progress-bar'),
     uploadFileMessage: document.getElementById('upload-file-message'),
+    authModal: document.getElementById('auth-modal'),
+    loginTab: document.getElementById('login-tab'),
+    registerTab: document.getElementById('register-tab'),
+    loginForm: document.getElementById('login-form'),
+    registerForm: document.getElementById('register-form'),
+    loginEmail: document.getElementById('login-email'),
+    loginPassword: document.getElementById('login-password'),
+    loginSubmitBtn: document.getElementById('login-submit-btn'),
+    loginMessage: document.getElementById('login-message'),
+    registerUsername: document.getElementById('register-username'),
+    registerEmail: document.getElementById('register-email'),
+    registerPassword: document.getElementById('register-password'),
+    registerSubmitBtn: document.getElementById('register-submit-btn'),
+    registerMessage: document.getElementById('register-message'),
+    userEmail: document.getElementById('user-email'),
+    logoutBtn: document.getElementById('logout-btn'),
 };
 
 let currentChatId = null;
 let currentArchetypeForChat = null;
+
+// === AUTHENTICATION FUNCTIONS ===
+
+function showAuthModal() {
+    elements.authModal.classList.remove('hidden');
+}
+
+function hideAuthModal() {
+    elements.authModal.classList.add('hidden');
+}
+
+function updateUserUI() {
+    if (authToken && currentUser) {
+        elements.userEmail.textContent = currentUser.email;
+        elements.logoutBtn.classList.remove('hidden');
+        hideAuthModal();
+    } else {
+        elements.userEmail.textContent = '';
+        elements.logoutBtn.classList.add('hidden');
+        showAuthModal();
+    }
+}
+
+async function handleLogin(email, password) {
+    try {
+        elements.loginSubmitBtn.disabled = true;
+        elements.loginMessage.textContent = 'Вхід...';
+        elements.loginMessage.className = 'auth-message';
+        
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            authToken = data.access_token;
+            currentUser = { email: data.email, user_id: data.user_id };
+            localStorage.setItem('authToken', authToken);
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            
+            elements.loginMessage.textContent = 'Успішний вхід!';
+            elements.loginMessage.className = 'auth-message success';
+            
+            setTimeout(() => {
+                updateUserUI();
+                elements.loginEmail.value = '';
+                elements.loginPassword.value = '';
+                elements.loginMessage.textContent = '';
+            }, 1000);
+        } else {
+            elements.loginMessage.textContent = data.error || 'Невірний email або пароль';
+            elements.loginMessage.className = 'auth-message error';
+        }
+    } catch (error) {
+        elements.loginMessage.textContent = 'Помилка з\'єднання';
+        elements.loginMessage.className = 'auth-message error';
+    } finally {
+        elements.loginSubmitBtn.disabled = false;
+    }
+}
+
+async function handleRegister(username, email, password) {
+    try {
+        elements.registerSubmitBtn.disabled = true;
+        elements.registerMessage.textContent = 'Реєстрація...';
+        elements.registerMessage.className = 'auth-message';
+        
+        const response = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            elements.registerMessage.textContent = 'Реєстрація успішна! Входимо...';
+            elements.registerMessage.className = 'auth-message success';
+            
+            // Auto-login after registration
+            setTimeout(() => {
+                handleLogin(email, password);
+                elements.registerUsername.value = '';
+                elements.registerEmail.value = '';
+                elements.registerPassword.value = '';
+                elements.loginTab.click();
+            }, 1000);
+        } else {
+            elements.registerMessage.textContent = data.error || 'Помилка реєстрації';
+            elements.registerMessage.className = 'auth-message error';
+        }
+    } catch (error) {
+        elements.registerMessage.textContent = 'Помилка з\'єднання';
+        elements.registerMessage.className = 'auth-message error';
+    } finally {
+        elements.registerSubmitBtn.disabled = false;
+    }
+}
+
+function handleLogout() {
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
+    updateUserUI();
+    
+    // Clear chat
+    elements.chatWindow.innerHTML = `
+        <div class="message assistant">
+            <p>Готово до роботи. Оберіть архетип та поставте запитання.</p>
+        </div>
+    `;
+    currentChatId = null;
+    currentArchetypeForChat = null;
+}
+
+// Helper function to add Authorization header to fetch requests
+function getAuthHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    return headers;
+}
 
 // Функція для генерації нового chat_id та імені файлу історії
 function generateChatId(archetype) {
@@ -79,6 +226,64 @@ function generateChatId(archetype) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize auth UI
+    updateUserUI();
+    
+    // Auth tab switching
+    elements.loginTab.addEventListener('click', () => {
+        elements.loginTab.classList.add('active');
+        elements.registerTab.classList.remove('active');
+        elements.loginForm.classList.remove('hidden');
+        elements.registerForm.classList.add('hidden');
+    });
+    
+    elements.registerTab.addEventListener('click', () => {
+        elements.registerTab.classList.add('active');
+        elements.loginTab.classList.remove('active');
+        elements.registerForm.classList.remove('hidden');
+        elements.loginForm.classList.add('hidden');
+    });
+    
+    // Login form submit
+    elements.loginSubmitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const email = elements.loginEmail.value.trim();
+        const password = elements.loginPassword.value;
+        
+        if (!email || !password) {
+            elements.loginMessage.textContent = 'Заповніть всі поля';
+            elements.loginMessage.className = 'auth-message error';
+            return;
+        }
+        
+        handleLogin(email, password);
+    });
+    
+    // Register form submit
+    elements.registerSubmitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const username = elements.registerUsername.value.trim();
+        const email = elements.registerEmail.value.trim();
+        const password = elements.registerPassword.value;
+        
+        if (!username || !email || !password) {
+            elements.registerMessage.textContent = 'Заповніть всі поля';
+            elements.registerMessage.className = 'auth-message error';
+            return;
+        }
+        
+        if (password.length < 8) {
+            elements.registerMessage.textContent = 'Пароль має бути не менше 8 символів';
+            elements.registerMessage.className = 'auth-message error';
+            return;
+        }
+        
+        handleRegister(username, email, password);
+    });
+    
+    // Logout button
+    elements.logoutBtn.addEventListener('click', handleLogout);
+    
     // --- Логіка кнопки "Новий чат" ---
     if (elements.newChatBtn) {
         elements.newChatBtn.addEventListener('click', () => {
@@ -147,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 response = await fetch('/conference/rada', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ 
                         text: userMessage, 
                         archetypes: [], // Порожній масив - сервер вибере агентів автоматично
@@ -164,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 response = await fetch('/process', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({ 
                         text: userMessage, 
                         archetype: selectedArchetype,

@@ -205,6 +205,63 @@ async def login(request: LoginRequest):
     )
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+@app.post("/api/auth/register", response_model=Token)
+async def register(request: RegisterRequest):
+    """
+    Register new user endpoint.
+    """
+    from core.database import get_session
+    from core.db_models import User
+    
+    session = get_session()
+    try:
+        # Check if user already exists
+        existing_user = session.query(User).filter(
+            (User.email == request.email) | (User.username == request.username)
+        ).first()
+        
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User with this email or username already exists"
+            )
+        
+        # Create new user
+        new_user = User(
+            username=request.username,
+            email=request.email,
+            password_hash=User.hash_password(request.password)
+        )
+        
+        session.add(new_user)
+        session.commit()
+        session.refresh(new_user)
+        
+        # Create access token
+        access_token_expires = timedelta(hours=settings.jwt_expiration_hours)
+        access_token = create_access_token(
+            data={"sub": new_user.email},
+            secret_key=settings.secret_key,
+            algorithm=settings.jwt_algorithm,
+            expires_delta=access_token_expires
+        )
+        
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            user_id=new_user.id,
+            email=new_user.email
+        )
+    finally:
+        session.close()
+
+
 # === ERROR HANDLERS ===
 
 from fastapi import Request
