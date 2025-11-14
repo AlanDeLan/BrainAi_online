@@ -149,7 +149,7 @@ for route in original_app.routes:
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
-from core.auth import authenticate_user, create_access_token, get_current_user, User
+from core.auth import authenticate_user, create_access_token, get_current_user
 from core.models import LoginRequest, TokenResponse, UserInfo
 
 
@@ -184,16 +184,6 @@ async def login(request: LoginRequest):
         access_token=access_token,
         token_type="bearer",
         expires_in=int(access_token_expires.total_seconds())
-    )
-
-
-@app.get("/api/auth/me", response_model=UserInfo)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Get current user information."""
-    return UserInfo(
-        username=current_user.username,
-        is_active=current_user.is_active,
-        is_admin=current_user.is_admin
     )
 
 
