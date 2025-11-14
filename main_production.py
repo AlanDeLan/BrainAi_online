@@ -192,6 +192,9 @@ async def login(request: LoginRequest):
 
 # === SIMPLE HEALTH CHECK (for Railway) ===
 
+from fastapi import Request
+from fastapi.responses import JSONResponse as FastAPIJSONResponse
+
 
 @app.get("/health")
 async def health_check():
@@ -199,12 +202,10 @@ async def health_check():
     Simple health check endpoint for Railway.
     Returns 200 OK if the app is running.
     """
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "environment": settings.environment,
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return FastAPIJSONResponse(
+        status_code=200,
+        content={"status": "ok"}
+    )
 
 
 # === ERROR HANDLERS ===
