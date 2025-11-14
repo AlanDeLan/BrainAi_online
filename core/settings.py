@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, alias="PORT")
     
     # === Database Settings ===
-    database_url: str = Field(default="sqlite:///./brainai.db", alias="DATABASE_URL")  # SQLite fallback
+    database_url: str = Field(alias="DATABASE_URL")  # No default - must be set in env
     
     @field_validator("database_url")
     @classmethod
