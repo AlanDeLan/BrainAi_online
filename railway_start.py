@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Railway startup script - handles PORT variable correctly
+Updated: Force Railway to rebuild with ChromaDB disabled
 """
 import os
 import subprocess
@@ -10,6 +11,7 @@ import sys
 port = os.environ.get("PORT", "8000")
 
 print(f"🚀 Starting BrainAi on port {port}...")
+print(f"📝 Build version: 5048e20 (ChromaDB disabled)")
 
 # Start uvicorn with proper port
 cmd = [
