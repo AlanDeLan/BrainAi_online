@@ -21,9 +21,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Створюємо необхідні директорії
-RUN mkdir -p history logs uploads
+RUN mkdir -p history logs uploads vector_db_storage
 
-# Volume для vector_db_storage буде змонтовано через App Platform
+# Встановлюємо права доступу для volume mount point
+RUN chmod 777 vector_db_storage
+
+# Volume для vector_db_storage буде змонтовано через Railway
 
 # Відкриваємо порт (Railway використовує змінну $PORT)
 EXPOSE 8000
