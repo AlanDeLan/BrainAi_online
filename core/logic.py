@@ -504,51 +504,9 @@ def process_with_archetype(text: str, archetype_name: str, archetypes: dict, cha
             except Exception as cache_error:
                 logger.debug(f"Cache save failed: {cache_error}")
         
-        # Save to vector database (both user message and assistant response)
-        if chat_id and user_id is not None:
-            try:
-                from vector_db.client import save_message, is_vector_db_available
-                import datetime
-                
-                if not is_vector_db_available():
-                    logger.warning("Vector DB not available - skipping save")
-                else:
-                    timestamp = datetime.datetime.now().isoformat()
-                    
-                    # Generate unique message IDs
-                    import hashlib
-                    user_msg_id = f"{chat_id}_user_{hashlib.md5(text.encode()).hexdigest()[:8]}"
-                    assistant_msg_id = f"{chat_id}_assistant_{hashlib.md5(model_response.encode()).hexdigest()[:8]}"
-                    
-                    logger.info(f"Saving to vector DB: user_id={user_id}, chat_id={chat_id}")
-                    
-                    # Save user message
-                    save_message(
-                        chat_id=chat_id,
-                        message_id=user_msg_id,
-                        message_text=text,
-                        role="user",
-                        archetype=archetype_name,
-                        timestamp=timestamp,
-                        user_id=user_id
-                    )
-                    
-                    # Save assistant response
-                    save_message(
-                        chat_id=chat_id,
-                        message_id=assistant_msg_id,
-                        message_text=model_response,
-                        role="assistant",
-                        archetype=archetype_name,
-                        timestamp=timestamp,
-                        user_id=user_id
-                    )
-                    
-                    logger.info(f"✅ Saved messages to vector DB: user_id={user_id}, chat_id={chat_id}")
-            except Exception as ve:
-                logger.error(f"❌ Failed to save to vector database: {ve}", exc_info=True)
-        elif user_id is None:
-            logger.warning("⚠️ Skipping vector DB save: user_id is None (authentication required)")
+        # Note: Vector DB save removed - using PostgreSQL instead (in main.py)
+        # ChromaDB requires persistent volumes which are not available on free Railway plan
+        logger.debug(f"✅ Response generated (vector DB save handled in main.py via PostgreSQL)")
         
         # Note: Interaction logging is handled in main.py to avoid duplicate files
         # log_interaction is kept for backward compatibility but not called here

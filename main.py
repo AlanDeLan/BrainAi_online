@@ -941,33 +941,67 @@ async def save_ai_provider_config(request: Request):
 
 # --- API for vector database operations ---
 @app.get("/api/vector-db")
-async def get_vector_db_entries(user_id: Optional[int] = Depends(get_current_user_id_optional)):
-    """Get all entries from vector database (grouped by chat_id)."""
+async def get_vector_db_entries(
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Get all chat entries from PostgreSQL database (replaces ChromaDB)."""
     try:
-        from vector_db.client import get_all_chats_grouped, is_vector_db_available
-        if not is_vector_db_available():
-            return JSONResponse(content={
-                "entries": [],
-                "count": 0,
-                "error": "Vector database not available (ChromaDB may not work in EXE mode)",
-                "available": False
-            })
-        # If no user_id (no auth), return empty
-        if user_id is None:
-            logger.warning("No user_id provided for vector-db, returning empty")
-            return JSONResponse(content={"entries": [], "count": 0, "available": True})
+        from core.db_models import ChatMessage
+        from sqlalchemy import func, and_
         
-        chats = get_all_chats_grouped(user_id=user_id)
-        return JSONResponse(content={"entries": chats, "count": len(chats), "available": True})
-    except ImportError:
+        # Default to admin if no auth
+        if user_id is None:
+            user_id = 1
+        
+        # Get all chats grouped by chat_id
+        chats_query = db.query(
+            ChatMessage.chat_id,
+            func.min(ChatMessage.created_at).label('first_message'),
+            func.max(ChatMessage.created_at).label('last_message'),
+            func.count(ChatMessage.id).label('message_count')
+        ).filter(
+            ChatMessage.user_id == user_id
+        ).group_by(
+            ChatMessage.chat_id
+        ).order_by(
+            func.max(ChatMessage.created_at).desc()
+        ).all()
+        
+        # Format for UI
+        entries = []
+        for chat in chats_query:
+            # Get first user message for preview
+            first_msg = db.query(ChatMessage).filter(
+                and_(
+                    ChatMessage.chat_id == chat.chat_id,
+                    ChatMessage.user_id == user_id,
+                    ChatMessage.role == "user"
+                )
+            ).order_by(ChatMessage.message_index).first()
+            
+            preview = first_msg.content[:100] if first_msg else "No preview"
+            archetype = first_msg.msg_metadata.get("archetype", "unknown") if first_msg and first_msg.msg_metadata else "unknown"
+            
+            entries.append({
+                "id": chat.chat_id,
+                "preview": preview,
+                "message_count": chat.message_count,
+                "archetype": archetype,
+                "metadata": {
+                    "first_message": chat.first_message.isoformat() if chat.first_message else None,
+                    "last_message": chat.last_message.isoformat() if chat.last_message else None
+                }
+            })
+        
         return JSONResponse(content={
-            "entries": [],
-            "count": 0,
-            "error": "Vector database module not available",
-            "available": False
+            "entries": entries,
+            "count": len(entries),
+            "available": True,
+            "source": "postgresql"
         })
     except Exception as e:
-        logger.error(f"Error getting vector DB entries: {e}", exc_info=True)
+        logger.error(f"Error getting chat entries: {e}", exc_info=True)
         return JSONResponse(content={
             "entries": [],
             "count": 0,
@@ -979,47 +1013,69 @@ async def get_vector_db_entries(user_id: Optional[int] = Depends(get_current_use
 async def search_vector_db(
     query: str = None,
     n_results: int = 5,
+    db: Session = Depends(get_db),
     user_id: Optional[int] = Depends(get_current_user_id_optional)
 ):
-    """Search vector database for relevant chats (optional user filtering)."""
+    """Search PostgreSQL database for relevant chats (simple text search)."""
     try:
         if not query:
             raise HTTPException(status_code=400, detail="Query parameter is required")
         
-        from vector_db.client import search_chats, is_vector_db_available
-        if not is_vector_db_available():
-            return JSONResponse(content={
-                "results": [],
-                "query": query,
-                "error": "Vector database not available (ChromaDB may not work in EXE mode)",
-                "available": False
-            })
+        from core.db_models import ChatMessage
+        from sqlalchemy import or_, func, and_
         
-        # If no user_id, return empty results for now
+        # Default to admin if no auth
         if user_id is None:
-            logger.warning("No user_id provided for search, returning empty")
-            return JSONResponse(content={"results": [], "query": query, "available": True})
+            user_id = 1
         
-        results = search_chats(query, n_results=n_results, user_id=user_id)
+        # Simple LIKE search (replace with PostgreSQL full-text search if needed)
+        query_lower = f"%{query.lower()}%"
         
-        # Convert score (distance) to relevance (1 - distance for similarity)
-        for result in results:
-            if 'score' in result:
-                # ChromaDB returns distances (lower is better), convert to relevance (higher is better)
-                result['relevance'] = max(0, 1 - result['score'])
-                # Keep score for compatibility
-        return JSONResponse(content={"results": results, "query": query, "available": True})
+        # Search in message content
+        matching_messages = db.query(
+            ChatMessage.chat_id,
+            func.max(ChatMessage.created_at).label('last_message')
+        ).filter(
+            and_(
+                ChatMessage.user_id == user_id,
+                ChatMessage.content.ilike(query_lower)
+            )
+        ).group_by(
+            ChatMessage.chat_id
+        ).order_by(
+            func.max(ChatMessage.created_at).desc()
+        ).limit(n_results).all()
+        
+        # Format results
+        results = []
+        for match in matching_messages:
+            # Get preview
+            first_msg = db.query(ChatMessage).filter(
+                and_(
+                    ChatMessage.chat_id == match.chat_id,
+                    ChatMessage.user_id == user_id
+                )
+            ).order_by(ChatMessage.message_index).first()
+            
+            if first_msg:
+                results.append({
+                    "chat_id": match.chat_id,
+                    "text": first_msg.content[:200],
+                    "archetype": first_msg.msg_metadata.get("archetype", "unknown") if first_msg.msg_metadata else "unknown",
+                    "timestamp": match.last_message.isoformat() if match.last_message else None,
+                    "relevance": 0.5  # Placeholder (no semantic search)
+                })
+        
+        return JSONResponse(content={
+            "results": results,
+            "query": query,
+            "available": True,
+            "source": "postgresql"
+        })
     except HTTPException:
         raise
-    except ImportError:
-        return JSONResponse(content={
-            "results": [],
-            "query": query,
-            "error": "Vector database module not available",
-            "available": False
-        })
     except Exception as e:
-        logger.error(f"Error searching vector DB: {e}", exc_info=True)
+        logger.error(f"Error searching chats: {e}", exc_info=True)
         return JSONResponse(content={
             "results": [],
             "query": query,
@@ -1029,64 +1085,56 @@ async def search_vector_db(
 
 
 @app.get("/api/vector-db/{chat_id}")
-async def get_vector_db_entry(chat_id: str, user_id: Optional[int] = Depends(get_current_user_id_optional)):
-    """Get specific chat from vector database by chat_id (grouped messages)."""
+async def get_vector_db_entry(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Get specific chat from PostgreSQL database by chat_id."""
     try:
-        from vector_db.client import get_user_collection, is_vector_db_available
+        from core.db_models import ChatMessage
+        from sqlalchemy import and_
         
-        if not is_vector_db_available():
-            raise HTTPException(status_code=503, detail="Vector database not available")
-        
+        # Default to admin if no auth
         if user_id is None:
-            raise HTTPException(status_code=401, detail="Authentication required")
+            user_id = 1
         
-        collection = get_user_collection(user_id)
-        if collection is None:
-            raise HTTPException(status_code=503, detail="Failed to get user collection")
-        
-        # Get all messages for this chat_id
-        all_data = collection.get()
-        
-        messages = []
-        chat_metadata = {}
-        
-        if all_data.get('ids'):
-            for i, msg_id in enumerate(all_data['ids']):
-                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
-                document = all_data['documents'][i] if all_data.get('documents') and i < len(all_data['documents']) else ""
-                
-                if metadata.get('chat_id') == chat_id:
-                    messages.append({
-                        'role': metadata.get('role', 'unknown'),
-                        'content': document,
-                        'message_id': msg_id,
-                        'timestamp': metadata.get('timestamp', '')
-                    })
-                    
-                    # Save first message metadata as chat metadata
-                    if not chat_metadata:
-                        chat_metadata = {
-                            'archetype': metadata.get('archetype', 'N/A'),
-                            'timestamp': metadata.get('timestamp', 'N/A'),
-                            'user_id': metadata.get('user_id')
-                        }
+        # Get all messages for this chat
+        messages = db.query(ChatMessage).filter(
+            and_(
+                ChatMessage.chat_id == chat_id,
+                ChatMessage.user_id == user_id
+            )
+        ).order_by(ChatMessage.message_index).all()
         
         if not messages:
             raise HTTPException(status_code=404, detail="Chat not found")
         
-        # Sort messages by timestamp
-        messages.sort(key=lambda x: x.get('timestamp', ''))
+        # Format messages
+        formatted_messages = []
+        chat_metadata = {}
+        
+        for msg in messages:
+            formatted_messages.append({
+                "role": msg.role,
+                "content": msg.content,
+                "timestamp": msg.created_at.isoformat() if msg.created_at else None
+            })
+            
+            # Extract metadata from first message
+            if not chat_metadata and msg.msg_metadata:
+                chat_metadata = msg.msg_metadata.copy()
         
         # Create document preview
-        user_messages = [msg for msg in messages if msg['role'] == 'user']
-        document = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in messages])
+        document = "\\n\\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in formatted_messages])
         
         return JSONResponse(content={
             "id": chat_id,
             "metadata": chat_metadata,
             "document": document,
-            "messages": messages,
-            "message_count": len(messages)
+            "messages": formatted_messages,
+            "message_count": len(formatted_messages),
+            "source": "postgresql"
         })
     except HTTPException:
         raise
@@ -1095,61 +1143,62 @@ async def get_vector_db_entry(chat_id: str, user_id: Optional[int] = Depends(get
         raise HTTPException(status_code=500, detail=f"Error reading entry: {str(e)}")
 
 @app.delete("/api/vector-db/{chat_id}")
-async def delete_vector_db_entry(chat_id: str, user_id: Optional[int] = Depends(get_current_user_id_optional)):
-    """Delete all messages for a chat from vector database."""
+async def delete_vector_db_entry(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Delete all messages for a chat from PostgreSQL database."""
     try:
-        from vector_db.client import get_user_collection, is_vector_db_available
+        from core.db_models import ChatMessage
+        from sqlalchemy import and_
         
-        if not is_vector_db_available():
-            raise HTTPException(status_code=503, detail="Vector database not available")
-        
+        # Default to admin if no auth
         if user_id is None:
-            raise HTTPException(status_code=401, detail="Authentication required")
+            user_id = 1
         
-        collection = get_user_collection(user_id)
-        if collection is None:
-            raise HTTPException(status_code=503, detail="Failed to get user collection")
+        # Delete all messages for this chat
+        deleted = db.query(ChatMessage).filter(
+            and_(
+                ChatMessage.chat_id == chat_id,
+                ChatMessage.user_id == user_id
+            )
+        ).delete()
         
-        # Get all messages for this chat
-        all_data = collection.get()
-        message_ids_to_delete = []
+        db.commit()
         
-        if all_data.get('ids'):
-            for i, msg_id in enumerate(all_data['ids']):
-                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
-                
-                if metadata.get('chat_id') == chat_id:
-                    message_ids_to_delete.append(msg_id)
-        
-        if not message_ids_to_delete:
+        if deleted == 0:
             raise HTTPException(status_code=404, detail="Chat not found")
         
-        # Delete all messages
-        collection.delete(ids=message_ids_to_delete)
-        
-        logger.info(f"Deleted {len(message_ids_to_delete)} messages from chat {chat_id} for user {user_id}")
+        logger.info(f"Deleted {deleted} messages from chat {chat_id}")
         
         return JSONResponse(content={
-            "status": "success", 
-            "message": f"Chat {chat_id} deleted ({len(message_ids_to_delete)} messages)"
+            "status": "success",
+            "message": f"Chat {chat_id} deleted ({deleted} messages)",
+            "source": "postgresql"
         })
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         logger.error(f"Error deleting chat {chat_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {str(e)}")
 
 @app.post("/api/vector-db/{chat_id}")
-async def update_vector_db_entry(chat_id: str, request: Request, user_id: Optional[int] = Depends(get_current_user_id_optional)):
-    """Update entry in vector database (updates assistant response)."""
+async def update_vector_db_entry(
+    chat_id: str, 
+    request: Request, 
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Update chat in PostgreSQL database (updates assistant response)."""
     try:
-        from vector_db.client import get_user_collection, is_vector_db_available
+        from core.db_models import ChatMessage
+        from sqlalchemy import and_
         
-        if not is_vector_db_available():
-            raise HTTPException(status_code=503, detail="Vector database not available")
-        
+        # Default to admin if no auth
         if user_id is None:
-            raise HTTPException(status_code=401, detail="Authentication required")
+            user_id = 1
         
         data = await request.json()
         
@@ -1157,36 +1206,33 @@ async def update_vector_db_entry(chat_id: str, request: Request, user_id: Option
         if not document:
             raise HTTPException(status_code=400, detail="Field 'document' is required")
         
-        collection = get_user_collection(user_id)
-        if collection is None:
-            raise HTTPException(status_code=503, detail="Failed to get user collection")
-        
-        # Get all messages for this chat
-        all_data = collection.get()
-        assistant_messages = []
-        
-        if all_data.get('ids'):
-            for i, msg_id in enumerate(all_data['ids']):
-                metadata = all_data['metadatas'][i] if all_data.get('metadatas') and i < len(all_data['metadatas']) else {}
-                
-                if metadata.get('chat_id') == chat_id and metadata.get('role') == 'assistant':
-                    assistant_messages.append(msg_id)
+        # Find assistant messages for this chat
+        assistant_messages = db.query(ChatMessage).filter(
+            and_(
+                ChatMessage.chat_id == chat_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.role == "assistant"
+            )
+        ).order_by(ChatMessage.message_index).all()
         
         if not assistant_messages:
-            raise HTTPException(status_code=404, detail="Chat not found")
+            raise HTTPException(status_code=404, detail="Chat not found or has no assistant messages")
         
-        # Update the first assistant message (response)
-        collection.update(
-            ids=[assistant_messages[0]],
-            documents=[document]
-        )
+        # Update the first assistant message (main response)
+        assistant_messages[0].content = document
+        db.commit()
         
-        logger.info(f"Updated chat {chat_id} for user {user_id}")
+        logger.info(f"Updated assistant message in chat {chat_id} for user {user_id}")
         
-        return JSONResponse(content={"status": "success", "message": f"Entry {chat_id} updated"})
+        return JSONResponse(content={
+            "status": "success", 
+            "message": f"Entry {chat_id} updated",
+            "source": "postgresql"
+        })
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         logger.error(f"Error updating chat {chat_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error updating entry: {str(e)}")
 
