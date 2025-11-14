@@ -296,6 +296,48 @@ async def reset_admin_password(db: Session = Depends(get_db)):
         )
 
 
+@app.get("/api/debug/vector-db")
+async def debug_vector_db(db: Session = Depends(get_db)):
+    """Debug endpoint to check vector DB status."""
+    from vector_db.client import is_vector_db_available, get_vector_db_type, get_user_collection
+    from core.db_models import User
+    
+    try:
+        # Check vector DB availability
+        vdb_available = is_vector_db_available()
+        vdb_type = get_vector_db_type()
+        
+        # Get current user count
+        user_count = db.query(User).count()
+        
+        # Get admin user
+        admin = db.query(User).filter(User.email == "admin@brainai.local").first()
+        
+        debug_info = {
+            "vector_db_available": vdb_available,
+            "vector_db_type": vdb_type,
+            "total_users": user_count,
+            "admin_exists": admin is not None,
+            "admin_id": admin.id if admin else None
+        }
+        
+        # Try to get admin's collection
+        if admin and vdb_available:
+            try:
+                collection = get_user_collection(admin.id)
+                if collection:
+                    count = collection.count()
+                    debug_info["admin_collection_count"] = count
+                else:
+                    debug_info["admin_collection_count"] = "collection_not_created"
+            except Exception as e:
+                debug_info["admin_collection_error"] = str(e)
+        
+        return debug_info
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # === ERROR HANDLERS ===
 
 from fastapi import Request
