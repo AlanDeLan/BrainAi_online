@@ -25,6 +25,7 @@ from core.monitoring import (
 )
 from core.utils import resource_path, get_base_directory
 from conferences.rada import router as rada_router
+from core.auth_routes import router as auth_router
 import aiofiles
 import yaml
 import shutil
@@ -53,6 +54,10 @@ app = FastAPI(
     openapi_url="/openapi.json"  # OpenAPI schema at /openapi.json
 )
 
+# Include routers
+app.include_router(rada_router)
+app.include_router(auth_router)  # Authentication routes
+
 # Setup logging
 logger.info("Starting Local Brain application")
 
@@ -62,9 +67,6 @@ templates_dir = resource_path("templates")
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory=templates_dir)
-
-# Include router for RADA mode
-app.include_router(rada_router)
 
 # For history, use directory next to exe file (not in _MEIPASS)
 if hasattr(sys, '_MEIPASS'):
