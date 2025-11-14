@@ -257,6 +257,45 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         )
 
 
+@app.post("/api/auth/reset-admin")
+async def reset_admin_password(db: Session = Depends(get_db)):
+    """
+    Reset admin user password. 
+    Deletes old admin and creates new one with correct bcrypt hash.
+    """
+    from core.db_models import User
+    
+    try:
+        # Delete old admin user
+        old_admin = db.query(User).filter(User.email == "admin@brainai.local").first()
+        if old_admin:
+            db.delete(old_admin)
+            db.commit()
+            logger.info("Deleted old admin user")
+        
+        # Create new admin with native bcrypt hash
+        new_admin = User(
+            username="admin",
+            email="admin@brainai.local",
+            password_hash=User.hash_password("SecureAdmin2024!"),
+            is_admin=True,
+            is_active=True
+        )
+        
+        db.add(new_admin)
+        db.commit()
+        logger.info("✅ Created new admin user with native bcrypt")
+        
+        return {"message": "Admin password reset successfully", "email": "admin@brainai.local"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Reset admin error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Reset failed: {str(e)}"
+        )
+
+
 # === ERROR HANDLERS ===
 
 from fastapi import Request
