@@ -23,8 +23,8 @@ COPY . .
 # Створюємо необхідні директорії
 RUN mkdir -p history logs uploads vector_db_storage
 
-# Встановлюємо права доступу для volume mount point
-RUN chmod 777 vector_db_storage
+# Встановлюємо права доступу для volume mount points
+RUN chmod 777 vector_db_storage history
 
 # Volume для vector_db_storage буде змонтовано через Railway
 
