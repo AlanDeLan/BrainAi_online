@@ -22,23 +22,36 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, alias="PORT")
     
     # === Database Settings ===
-    database_url: str = Field(alias="DATABASE_URL")  # No default - must be set in env
+    database_url: str = Field(default="", alias="DATABASE_URL")
     
-    @field_validator("database_url")
+    @field_validator("database_url", mode="before")
     @classmethod
-    def clean_database_url(cls, v):
-        """Remove Railway template syntax from DATABASE_URL."""
+    def build_database_url(cls, v):
+        """Build DATABASE_URL from Railway environment or individual components."""
         import os
-        # Debug logging
-        raw_url = os.environ.get('DATABASE_URL', 'NOT_SET')
-        print(f"DEBUG: Raw DATABASE_URL from env: {raw_url[:50]}...")
-        print(f"DEBUG: Received in validator: {v[:50] if v else 'None'}...")
         
-        if v and v.startswith("${{") and v.endswith("}}"):
-            # Extract actual URL from ${{...}}
-            v = v[3:-2].strip()
-            print(f"DEBUG: Cleaned to: {v[:50]}...")
-        return v
+        # Try Railway-specific variables first
+        postgres_host = os.getenv("PGHOST", "")
+        postgres_port = os.getenv("PGPORT", "")
+        postgres_user = os.getenv("PGUSER", "")
+        postgres_password = os.getenv("PGPASSWORD", "")
+        postgres_database = os.getenv("PGDATABASE", "")
+        
+        # If Railway individual vars exist, construct URL
+        if all([postgres_host, postgres_port, postgres_user, postgres_password, postgres_database]):
+            constructed_url = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_database}"
+            print(f"✅ Built DATABASE_URL from Railway PGHOST vars")
+            print(f"   Host: {postgres_host}:{postgres_port}")
+            return constructed_url
+        
+        # Fallback to DATABASE_URL if provided
+        if v and not v.startswith("postgresql://user:password"):
+            print(f"✅ Using DATABASE_URL from environment")
+            return v
+        
+        # If still placeholder or empty, use SQLite for development
+        print(f"⚠️  No valid PostgreSQL config found, using SQLite")
+        return "sqlite:///./brainai.db"
     
     # === AI Provider Settings ===
     ai_provider: str = Field(default="google_ai", alias="AI_PROVIDER")
