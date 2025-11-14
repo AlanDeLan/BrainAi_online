@@ -44,19 +44,23 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize database (production only with valid PostgreSQL URL)
         if settings.is_production and settings.database_url.startswith("postgresql"):
-            logger.info("📊 Initializing PostgreSQL database...")
-            init_database(settings.database_url)
-            logger.info("✅ Database initialized")
+            try:
+                logger.info("📊 Initializing PostgreSQL database...")
+                init_database(settings.database_url)
+                logger.info("✅ Database initialized")
+                
+                # Initialize admin user (only if password is not default and DB is ready)
+                if settings.admin_password != "admin123":
+                    logger.info("👤 Initializing admin user...")
+                    init_admin_user(settings.admin_username, settings.admin_password)
+                    logger.info("✅ Admin user initialized")
+                else:
+                    logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
+            except Exception as db_error:
+                logger.warning(f"⚠️ Database initialization skipped: {db_error}")
+                logger.info("💡 Run migration script: railway run python migrate_db.py")
         else:
             logger.info("⚠️ Skipping database initialization (not production PostgreSQL)")
-        
-        # Initialize admin user (only if password is not default)
-        if settings.admin_password != "admin123":
-            logger.info("👤 Initializing admin user...")
-            init_admin_user(settings.admin_username, settings.admin_password)
-            logger.info("✅ Admin user initialized")
-        else:
-            logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
         
         # Log configuration
         logger.info(f"🔧 Configuration:")
