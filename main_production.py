@@ -138,10 +138,13 @@ from core.utils import resource_path
 static_dir = resource_path("static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Copy all routes from original app (except static mount which is already duplicated)
+# Copy all routes from original app (except static mount and health check)
 for route in original_app.routes:
     # Skip the static files mount from original app to avoid conflicts
     if hasattr(route, 'path') and route.path == "/static":
+        continue
+    # Skip health check - we have our own simple version below
+    if hasattr(route, 'path') and route.path == "/health":
         continue
     app.router.routes.append(route)
 
