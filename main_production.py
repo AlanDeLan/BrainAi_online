@@ -178,82 +178,23 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
     )
 
 
-# === ENHANCED HEALTH CHECK ===
+# === SIMPLE HEALTH CHECK (for Railway) ===
 
-from core.models import HealthCheckResponse
 from datetime import datetime
 
 
-@app.get("/health", response_model=HealthCheckResponse)
+@app.get("/health")
 async def health_check():
     """
-    Enhanced health check endpoint for Render.
-    
-    Returns:
-        Health status with detailed checks
+    Simple health check endpoint for Railway.
+    Returns 200 OK if the app is running.
     """
-    checks = {}
-    status_ok = True
-    
-    # Check database
-    if settings.is_production:
-        try:
-            from core.database import get_db
-            db = get_db()
-            session = db.get_session()
-            session.execute("SELECT 1")
-            session.close()
-            checks["database"] = True
-        except Exception as e:
-            logger.error(f"Database health check failed: {e}")
-            checks["database"] = False
-            status_ok = False
-    else:
-        checks["database"] = True  # Skip in development
-    
-    # Check AI provider
-    try:
-        from core.ai_providers import get_current_provider, get_provider_config
-        provider = get_current_provider()
-        config = get_provider_config()
-        
-        # Check if API key is set
-        if provider.value == "google_ai":
-            checks["ai_provider"] = bool(config.get("google_api_key"))
-        elif provider.value == "openai":
-            checks["ai_provider"] = bool(config.get("openai_api_key"))
-        else:
-            checks["ai_provider"] = False
-        
-        if not checks["ai_provider"]:
-            status_ok = False
-    except Exception as e:
-        logger.error(f"AI provider health check failed: {e}")
-        checks["ai_provider"] = False
-        status_ok = False
-    
-    # Check vector database (optional)
-    try:
-        from vector_db.client import is_vector_db_available
-        checks["vector_db"] = is_vector_db_available()
-    except Exception:
-        checks["vector_db"] = False  # Not critical
-    
-    # Determine overall status
-    if status_ok:
-        overall_status = "healthy"
-    elif checks.get("database", False) and checks.get("ai_provider", False):
-        overall_status = "degraded"
-    else:
-        overall_status = "unhealthy"
-    
-    return HealthCheckResponse(
-        status=overall_status,
-        version="1.0.0",
-        environment=settings.environment,
-        timestamp=datetime.utcnow(),
-        checks=checks
-    )
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "environment": settings.environment,
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 
 # === ERROR HANDLERS ===
