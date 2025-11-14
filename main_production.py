@@ -106,6 +106,7 @@ from starlette.responses import PlainTextResponse
 @app.get("/health", response_class=PlainTextResponse)
 async def health_check():
     """Simple health check for Railway."""
+    logger.info("Health check endpoint called")
     return "ok"
 
 # === MIDDLEWARE CONFIGURATION ===
@@ -205,6 +206,19 @@ async def login(request: LoginRequest):
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from core.models import ErrorResponse
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all HTTP requests."""
+    logger.info(f"Request: {request.method} {request.url.path}")
+    try:
+        response = await call_next(request)
+        logger.info(f"Response: {response.status_code}")
+        return response
+    except Exception as e:
+        logger.error(f"Error processing request: {e}", exc_info=True)
+        raise
 
 
 @app.exception_handler(HTTPException)
