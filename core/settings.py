@@ -30,34 +30,38 @@ class Settings(BaseSettings):
         """Build DATABASE_URL from Railway environment or individual components."""
         import os
         
-        # DEBUG: Show ALL environment variables starting with PG or DATABASE
-        print("\n=== DATABASE ENVIRONMENT VARIABLES DEBUG ===")
-        for key, value in os.environ.items():
-            if key.startswith(("PG", "DATABASE", "POSTGRES")):
-                masked = value[:50] + "..." if len(value) > 50 else value
-                print(f"  {key} = {masked}")
-        print("=== END DEBUG ===\n")
+        # Check if DATABASE_URL is the placeholder value
+        if v and v == "postgresql://user:password@host:port/database":
+            print("⚠️  Detected Railway placeholder DATABASE_URL")
+            # Use Railway internal PostgreSQL connection
+            # Railway provides PostgreSQL service at postgres.railway.internal
+            postgres_password = os.getenv("POSTGRES_PASSWORD", "")
+            if postgres_password:
+                railway_url = f"postgresql://postgres:{postgres_password}@postgres.railway.internal:5432/railway"
+                print(f"✅ Using Railway PostgreSQL with password from POSTGRES_PASSWORD")
+                return railway_url
+            else:
+                print("⚠️  POSTGRES_PASSWORD not set, using SQLite")
+                return "sqlite:///./brainai.db"
         
-        # Try Railway-specific variables first
+        # Try Railway-specific variables
         postgres_host = os.getenv("PGHOST", "")
         postgres_port = os.getenv("PGPORT", "")
         postgres_user = os.getenv("PGUSER", "")
         postgres_password = os.getenv("PGPASSWORD", "")
         postgres_database = os.getenv("PGDATABASE", "")
         
-        # If Railway individual vars exist, construct URL
         if all([postgres_host, postgres_port, postgres_user, postgres_password, postgres_database]):
             constructed_url = f"postgresql://{postgres_user}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_database}"
             print(f"✅ Built DATABASE_URL from Railway PGHOST vars")
-            print(f"   Host: {postgres_host}:{postgres_port}")
             return constructed_url
         
-        # Fallback to DATABASE_URL if provided
-        if v and not v.startswith("postgresql://user:password"):
+        # Fallback to DATABASE_URL if provided and valid
+        if v and v.startswith("postgresql://") and "host:port" not in v:
             print(f"✅ Using DATABASE_URL from environment")
             return v
         
-        # If still placeholder or empty, use SQLite for development
+        # Default to SQLite
         print(f"⚠️  No valid PostgreSQL config found, using SQLite")
         return "sqlite:///./brainai.db"
     
