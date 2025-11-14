@@ -21,10 +21,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Створюємо необхідні директорії
-RUN mkdir -p history logs uploads vector_db_storage
+RUN mkdir -p logs uploads
 
-# Встановлюємо права доступу для volume mount points
-RUN chmod 777 vector_db_storage history
+# Note: history and vector_db_storage removed - using PostgreSQL instead
+# Free Railway plan does not support persistent volumes
 
 # Volume для vector_db_storage буде змонтовано через Railway
 

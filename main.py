@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from sqlalchemy.orm import Session
 from core.logic import load_archetypes, process_with_archetype, reload_archetypes
 from core.ai_providers import (
     get_current_provider, 
@@ -157,11 +158,13 @@ def get_chat_file(chat_id):
 @app.post("/process")
 async def process_text(
     request: Request,
+    db: Session = Depends(get_db),
     user_id: Optional[int] = Depends(get_current_user_id_optional)
 ):
     """
     Process text with selected archetype.
     Optional authentication - works with or without JWT token.
+    Saves to PostgreSQL instead of files.
     """
     with TimerContext("process_request"):
         try:
@@ -171,6 +174,10 @@ async def process_text(
             archetype = data.get("archetype")
             remember = data.get("remember", True)
             chat_id = data.get("chat_id")
+            
+            # Default to admin user if no authentication
+            if user_id is None:
+                user_id = 1  # Admin user
             
             logger.info(f"Processing request: user_id={user_id}, archetype={archetype}, chat_id={chat_id}, remember={remember}")
             increment_counter(f"archetype_{archetype}")
@@ -192,25 +199,34 @@ async def process_text(
             if 'top_k' in data:
                 model_params['top_k'] = int(data['top_k'])
             
-            # --- Load chat history BEFORE processing (for context) ---
+            # --- Load chat history from PostgreSQL ---
             chat_history = []
             if remember and chat_id:
                 try:
-                    filepath = get_chat_file(chat_id)
-                    if os.path.exists(filepath):
-                        try:
-                            async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
-                                content = await f.read()
-                                try:
-                                    chat_history = json.loads(content)
-                                except json.JSONDecodeError as e:
-                                    logger.warning(f"Failed to parse history file {filepath}: {e}, using empty history")
-                                    chat_history = []
-                        except Exception as e:
-                            logger.warning(f"Failed to read history file {filepath}: {e}, using empty history")
-                            chat_history = []
+                    from core.db_models import ChatMessage
+                    from sqlalchemy import and_
+                    
+                    messages = db.query(ChatMessage).filter(
+                        and_(
+                            ChatMessage.chat_id == chat_id,
+                            ChatMessage.user_id == user_id
+                        )
+                    ).order_by(ChatMessage.message_index).all()
+                    
+                    # Convert to chat_history format (pairs of user/assistant)
+                    for i in range(0, len(messages), 2):
+                        if i + 1 < len(messages):
+                            user_msg = messages[i]
+                            assistant_msg = messages[i + 1]
+                            chat_history.append({
+                                "user_input": user_msg.content,
+                                "archetype": user_msg.msg_metadata.get("archetype", archetype) if user_msg.msg_metadata else archetype,
+                                "model_response": assistant_msg.content
+                            })
+                    
+                    logger.debug(f"Loaded {len(chat_history)} message pairs from PostgreSQL")
                 except Exception as e:
-                    logger.warning(f"Error loading chat history: {e}, using empty history")
+                    logger.warning(f"Error loading chat history from DB: {e}, using empty history")
                     chat_history = []
             
             result = process_with_archetype(
@@ -228,83 +244,50 @@ async def process_text(
                 increment_counter("api_errors")
                 raise HTTPException(status_code=500, detail=result["error"])
             
-            # --- Save chat as array of messages in single file ---
+            # --- Save to PostgreSQL database ---
             if remember and chat_id:
                 try:
-                    filepath = get_chat_file(chat_id)
-                    # Use chat_history we already loaded (or create new if not loaded)
-                    if not chat_history:
-                        # If chat_history wasn't loaded (e.g., remember=False initially), load it now
-                        if os.path.exists(filepath):
-                            try:
-                                async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
-                                    content = await f.read()
-                                    try:
-                                        chat_history = json.loads(content)
-                                    except json.JSONDecodeError as e:
-                                        logger.warning(f"Failed to parse history file {filepath}: {e}, creating new history")
-                                        chat_history = []
-                            except Exception as e:
-                                logger.warning(f"Failed to read history file {filepath}: {e}, creating new history")
-                                chat_history = []
+                    from core.db_models import ChatMessage
                     
-                    # Append new message to history
-                    chat_history.append({
-                        "user_input": text,
-                        "archetype": archetype,
-                        "model_response": result.get("response", "")
-                    })
-                    
-                    try:
-                        async with aiofiles.open(filepath, "w", encoding="utf-8") as f:
-                            await f.write(json.dumps(chat_history, ensure_ascii=False, indent=2))
-                        logger.debug(f"Chat history saved to {filepath}")
-                    except Exception as e:
-                        logger.error(f"Failed to save chat history to {filepath}: {e}", exc_info=True)
-                        # Don't fail the request if history save fails
-                    
-                    # --- Save to vector database (save each message separately) ---
-                    try:
-                        from vector_db.client import save_message
-                        import datetime
-                        
-                        # Get timestamp with microsecond precision for uniqueness
-                        timestamp = datetime.datetime.now().isoformat()
-                        msg_index = len(chat_history) - 1  # Index of the last message (just added)
-                        
-                        # Save user message (use message index * 2 for user messages)
-                        user_msg_id = f"{chat_id}_msg_{msg_index * 2}_user"
-                        save_message(
-                            chat_id=chat_id,
-                            message_id=user_msg_id,
-                            message_text=text,
-                            role="user",
-                            archetype=archetype,
-                            timestamp=timestamp,
-                            user_id=user_id
+                    # Get current message count for this chat
+                    existing_count = db.query(ChatMessage).filter(
+                        and_(
+                            ChatMessage.chat_id == chat_id,
+                            ChatMessage.user_id == user_id
                         )
-                        
-                        # Save assistant response (use message index * 2 + 1 for assistant messages)
-                        assistant_msg_id = f"{chat_id}_msg_{msg_index * 2 + 1}_assistant"
-                        save_message(
-                            chat_id=chat_id,
-                            message_id=assistant_msg_id,
-                            message_text=result.get("response", ""),
-                            role="assistant",
-                            archetype=archetype,
-                            timestamp=timestamp,
-                            user_id=user_id
-                        )
-                        
-                        logger.debug(f"Messages saved to vector database: {user_msg_id}, {assistant_msg_id}")
-                        increment_counter("vector_db_saves")
-                    except Exception as e:
-                        # Log error but don't fail the request
-                        logger.warning(f"Failed to save to vector database: {e}", exc_info=True)
-                        increment_counter("vector_db_errors")
+                    ).count()
+                    
+                    # Save user message
+                    user_msg = ChatMessage(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        role="user",
+                        content=text,
+                        message_index=existing_count,
+                        msg_metadata={"archetype": archetype}
+                    )
+                    db.add(user_msg)
+                    
+                    # Save assistant response
+                    assistant_msg = ChatMessage(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        role="assistant",
+                        content=result.get("response", ""),
+                        message_index=existing_count + 1,
+                        msg_metadata={"archetype": archetype}
+                    )
+                    db.add(assistant_msg)
+                    
+                    db.commit()
+                    logger.info(f"💾 Saved to PostgreSQL: chat_id={chat_id}, messages={existing_count} -> {existing_count + 2}")
+                    increment_counter("db_saves")
+                    
                 except Exception as e:
-                    logger.error(f"Unexpected error saving chat: {e}", exc_info=True)
-                    # Don't fail the request if chat save fails
+                    db.rollback()
+                    logger.error(f"Failed to save to PostgreSQL: {e}", exc_info=True)
+                    increment_counter("db_errors")
+                    # Don't fail the request if save fails
             
             # Track cache hits/misses
             if result.get("cached"):
@@ -322,42 +305,124 @@ async def process_text(
             raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/history", response_model=List[str])
-async def get_history_list():
+async def get_history_list(
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Get list of chat IDs from PostgreSQL database."""
     try:
-        files = [f for f in os.listdir(HISTORY_DIR) if f.endswith('.json')]
-        files.sort(reverse=True)
-        return files
-    except FileNotFoundError:
+        from core.db_models import ChatMessage
+        from sqlalchemy import distinct, func
+        
+        # Default to admin if no auth
+        if user_id is None:
+            user_id = 1
+        
+        # Get distinct chat_ids for this user
+        chats = db.query(
+            ChatMessage.chat_id,
+            func.max(ChatMessage.created_at).label('last_message')
+        ).filter(
+            ChatMessage.user_id == user_id
+        ).group_by(
+            ChatMessage.chat_id
+        ).order_by(
+            func.max(ChatMessage.created_at).desc()
+        ).all()
+        
+        # Return chat IDs in same format as file-based system
+        chat_ids = [f"{chat.chat_id}.json" for chat in chats]
+        return chat_ids
+    except Exception as e:
+        logger.error(f"Error getting history list: {e}", exc_info=True)
         return []
 
 @app.get("/history/{filename}")
-async def get_history_file(filename: str):
+async def get_history_file(
+    filename: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Get chat history from PostgreSQL database."""
     if "/" in filename or "\\" in filename or ".." in filename:
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
     try:
-        filepath = os.path.join(HISTORY_DIR, filename)
-        if not os.path.abspath(filepath).startswith(os.path.abspath(HISTORY_DIR)):
-            return JSONResponse(status_code=403, content={"error": "Access denied"})
-        async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
-            content = await f.read()
-            data = json.loads(content)
+        from core.db_models import ChatMessage
+        from sqlalchemy import and_
+        
+        # Extract chat_id from filename (remove .json extension)
+        chat_id = filename.replace(".json", "")
+        
+        # Default to admin if no auth
+        if user_id is None:
+            user_id = 1
+        
+        # Get messages from database
+        messages = db.query(ChatMessage).filter(
+            and_(
+                ChatMessage.chat_id == chat_id,
+                ChatMessage.user_id == user_id
+            )
+        ).order_by(ChatMessage.message_index).all()
+        
+        if not messages:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        
+        # Convert to file format (array of pairs)
+        data = []
+        for i in range(0, len(messages), 2):
+            if i + 1 < len(messages):
+                user_msg = messages[i]
+                assistant_msg = messages[i + 1]
+                data.append({
+                    "user_input": user_msg.content,
+                    "archetype": user_msg.msg_metadata.get("archetype", "unknown") if user_msg.msg_metadata else "unknown",
+                    "model_response": assistant_msg.content
+                })
+        
         return JSONResponse(content=data)
-    except FileNotFoundError:
-        return JSONResponse(status_code=404, content={"error": "File not found"})
     except Exception as e:
+        logger.error(f"Error getting chat: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.delete("/history/{filename}")
-async def delete_history_file(filename: str):
+async def delete_history_file(
+    filename: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Delete chat from PostgreSQL database."""
     if "/" in filename or "\\" in filename or ".." in filename:
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
-    filepath = os.path.join(HISTORY_DIR, filename)
-    if not os.path.exists(filepath):
-        return JSONResponse(status_code=404, content={"error": "File not found"})
     try:
-        os.remove(filepath)
-        return JSONResponse(content={"status": "deleted"})
+        from core.db_models import ChatMessage
+        from sqlalchemy import and_
+        
+        # Extract chat_id from filename
+        chat_id = filename.replace(".json", "")
+        
+        # Default to admin if no auth
+        if user_id is None:
+            user_id = 1
+        
+        # Delete all messages for this chat
+        deleted = db.query(ChatMessage).filter(
+            and_(
+                ChatMessage.chat_id == chat_id,
+                ChatMessage.user_id == user_id
+            )
+        ).delete()
+        
+        db.commit()
+        
+        if deleted == 0:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        
+        logger.info(f"Deleted {deleted} messages from chat {chat_id}")
+        return JSONResponse(content={"status": "deleted", "messages_deleted": deleted})
     except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting chat: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/api/history/search")

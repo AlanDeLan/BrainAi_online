@@ -9,11 +9,5 @@ healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
-# Persistent storage for vector database and chat history
-[[deploy.volumes]]
-mountPath = "/app/vector_db_storage"
-name = "chromadb_storage"
-
-[[deploy.volumes]]
-mountPath = "/app/history"
-name = "chat_history"
+# Note: Volumes removed - using PostgreSQL for all persistent storage
+# Free Railway plan does not support volumes
