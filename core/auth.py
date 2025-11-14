@@ -1,5 +1,6 @@
 """
-JWT-based authentication system for production.
+JWT-based authentication system for multi-user production.
+Integrated with PostgreSQL database models.
 """
 import os
 from datetime import datetime, timedelta
@@ -9,7 +10,13 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from core.db_models import User as DBUser, UserSession
+from core.database import get_db
+from core.logger import get_logger
+
+logger = get_logger()
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -17,29 +24,42 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # JWT Security
 security = HTTPBearer()
 
+# JWT Settings
+SECRET_KEY = os.environ.get("SECRET_KEY", "default-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_DAYS = 7
+
 
 class Token(BaseModel):
     """JWT Token response model."""
     access_token: str
     token_type: str = "bearer"
+    user_id: int
+    email: str
 
 
 class TokenData(BaseModel):
     """JWT Token data model."""
-    username: Optional[str] = None
+    user_id: Optional[int] = None
+    email: Optional[str] = None
     exp: Optional[datetime] = None
 
 
-class User(BaseModel):
-    """User model."""
+class UserAuth(BaseModel):
+    """User model for authentication."""
+    user_id: int
+    email: str
     username: str
     is_active: bool = True
-    is_admin: bool = False
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
 
 
 def get_password_hash(password: str) -> str:
@@ -47,52 +67,39 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(
-    data: dict,
-    secret_key: str,
-    algorithm: str = "HS256",
-    expires_delta: Optional[timedelta] = None
-) -> str:
+def create_access_token(user_id: int, email: str) -> str:
     """
-    Create JWT access token.
+    Create JWT access token for user.
     
     Args:
-        data: Data to encode in token
-        secret_key: Secret key for signing
-        algorithm: JWT algorithm (default: HS256)
-        expires_delta: Token expiration time
+        user_id: User ID
+        email: User email
     
     Returns:
         Encoded JWT token
     """
-    to_encode = data.copy()
+    expires_delta = timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    expire = datetime.utcnow() + expires_delta
     
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(hours=24)
+    to_encode = {
+        "sub": str(user_id),  # Subject = user_id
+        "email": email,
+        "exp": expire
+    }
     
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
-    
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 
-def decode_access_token(
-    token: str,
-    secret_key: str,
-    algorithm: str = "HS256"
-) -> TokenData:
+def decode_access_token(token: str) -> TokenData:
     """
     Decode and verify JWT token.
     
     Args:
         token: JWT token to decode
-        secret_key: Secret key for verification
-        algorithm: JWT algorithm
     
     Returns:
-        TokenData with username and expiration
+        TokenData with user_id, email and expiration
     
     Raises:
         HTTPException: If token is invalid or expired
@@ -104,35 +111,36 @@ def decode_access_token(
     )
     
     try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        username: str = payload.get("sub")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str: str = payload.get("sub")
+        email: str = payload.get("email")
         exp: int = payload.get("exp")
         
-        if username is None:
+        if user_id_str is None or email is None:
             raise credentials_exception
         
         token_data = TokenData(
-            username=username,
+            user_id=int(user_id_str),
+            email=email,
             exp=datetime.fromtimestamp(exp) if exp else None
         )
         return token_data
         
-    except JWTError:
+    except (JWTError, ValueError) as e:
+        logger.warning(f"Token decode error: {e}")
         raise credentials_exception
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    secret_key: Optional[str] = None,
-    algorithm: str = "HS256"
-) -> User:
+    db: Session = Depends(get_db)
+) -> UserAuth:
     """
-    Dependency to get current authenticated user.
+    Dependency to get current authenticated user from database.
     
     Args:
         credentials: HTTP Bearer credentials
-        secret_key: Secret key for JWT verification
-        algorithm: JWT algorithm
+        db: Database session
     
     Returns:
         Current user
@@ -140,83 +148,120 @@ async def get_current_user(
     Raises:
         HTTPException: If authentication fails
     """
-    if not secret_key:
-        from core.settings import settings
-        secret_key = settings.secret_key
-    
     token = credentials.credentials
-    token_data = decode_access_token(token, secret_key, algorithm)
+    token_data = decode_access_token(token)
     
-    # Here you would normally fetch user from database
-    # For now, return a simple user object
-    user = User(
-        username=token_data.username,
-        is_active=True,
-        is_admin=True  # In production, fetch from database
-    )
+    # Fetch user from database
+    user = db.query(DBUser).filter(DBUser.id == token_data.user_id).first()
     
-    if not user.is_active:
+    if user is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
         )
     
-    return user
+    return UserAuth(
+        user_id=user.id,
+        email=user.email,
+        username=user.username,
+        is_active=True
+    )
 
 
-async def get_current_active_admin(
-    current_user: User = Depends(get_current_user)
-) -> User:
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> int:
     """
-    Dependency to require admin user.
+    Lightweight dependency to get just user_id without DB lookup.
+    Use when you only need user_id for filtering.
     
     Args:
-        current_user: Current authenticated user
+        credentials: HTTP Bearer credentials
     
     Returns:
-        Current user if admin
+        User ID
     
     Raises:
-        HTTPException: If user is not admin
+        HTTPException: If token is invalid
     """
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
-    return current_user
+    token = credentials.credentials
+    token_data = decode_access_token(token)
+    return token_data.user_id
 
 
-# Simple in-memory user storage (replace with database in production)
-fake_users_db = {}
-
-
-def init_admin_user(username: str, password: str):
-    """Initialize admin user."""
-    fake_users_db[username] = {
-        "username": username,
-        "hashed_password": get_password_hash(password),
-        "is_active": True,
-        "is_admin": True
-    }
-
-
-def authenticate_user(username: str, password: str) -> Optional[User]:
+def authenticate_user(db: Session, email: str, password: str) -> Optional[DBUser]:
     """
-    Authenticate user by username and password.
+    Authenticate user by email and password.
     
     Args:
-        username: Username
+        db: Database session
+        email: User email
         password: Plain text password
     
     Returns:
         User object if authenticated, None otherwise
     """
-    user_dict = fake_users_db.get(username)
-    if not user_dict:
+    try:
+        user = db.query(DBUser).filter(DBUser.email == email).first()
+        if user is None:
+            logger.warning(f"User not found: {email}")
+            return None
+        
+        if not verify_password(password, user.password_hash):
+            logger.warning(f"Invalid password for user: {email}")
+            return None
+        
+        return user
+    except Exception as e:
+        logger.error(f"Authentication error: {e}")
         return None
+
+
+def create_user_session(db: Session, user_id: int, token: str) -> UserSession:
+    """
+    Create user session in database.
     
-    if not verify_password(password, user_dict["hashed_password"]):
-        return None
+    Args:
+        db: Database session
+        user_id: User ID
+        token: JWT token
     
-    return User(**user_dict)
+    Returns:
+        Created UserSession object
+    """
+    expires_at = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    session = UserSession(
+        user_id=user_id,
+        session_token=token,
+        expires_at=expires_at
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def invalidate_user_session(db: Session, token: str) -> bool:
+    """
+    Invalidate user session by token.
+    
+    Args:
+        db: Database session
+        token: JWT token to invalidate
+    
+    Returns:
+        True if session was invalidated, False otherwise
+    """
+    try:
+        session = db.query(UserSession).filter(
+            UserSession.session_token == token
+        ).first()
+        
+        if session:
+            db.delete(session)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error invalidating session: {e}")
+        return False
