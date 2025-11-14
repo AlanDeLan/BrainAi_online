@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Копіюємо файл залежностей
-COPY requirements.txt .
+# Копіюємо файл залежностей (production)
+COPY requirements.production.txt requirements.txt
 
 # Встановлюємо Python залежності
 RUN pip install --no-cache-dir -r requirements.txt
