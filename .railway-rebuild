@@ -1,0 +1,4 @@
+# Force Railway to rebuild from scratch
+# Timestamp: 2025-11-15 18:40 UTC
+# Reason: Clear Python module cache (ChromaDB removal)
+REBUILD_TRIGGER=20251115_1840

@@ -1,6 +1,8 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+# Force clean build (no cache) - remove ChromaDB completely
+buildCommand = "echo 'Clean build - ChromaDB removed'"
 
 [deploy]
 startCommand = "python railway_start.py"
