@@ -1165,10 +1165,10 @@ async def get_vector_db_entry(
     except HTTPException:
         raise
     except Exception as e:
-        # Extra logging to diagnose 503 occurrences
-        logger.error(f"Error getting chat {chat_id}: {e}", exc_info=True)
-        # Return explicit 500; upstream 503 indicates external layer issue
-        raise HTTPException(status_code=500, detail=f"Error reading entry: {str(e)}")
+        import uuid
+        err_id = str(uuid.uuid4())
+        logger.error(f"[chat_fetch_error] id={err_id} chat_id={chat_id} user_id={user_id} error={e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error reading entry (id={err_id}): {str(e)}")
 
 @app.delete("/api/vector-db/{chat_id}")
 async def delete_vector_db_entry(
@@ -1400,6 +1400,49 @@ async def upload_file(
             detail=f"Error processing file: {str(e)}"
         )
 
+@app.post("/api/semantic/reindex")
+async def semantic_reindex(
+    request: Request,
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Admin endpoint: trigger embeddings reindex (body: {all: bool, dry_run: bool, batch_size: int, target_user_id: int})."""
+    try:
+        if user_id != 1:
+            raise HTTPException(status_code=403, detail="Admin only")
+        payload = await request.json()
+        all_flag = bool(payload.get("all", False))
+        dry_run = bool(payload.get("dry_run", False))
+        batch_size = int(payload.get("batch_size", 500))
+        target_user_id = payload.get("target_user_id")
+        if target_user_id is not None:
+            try:
+                target_user_id = int(target_user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="target_user_id must be int")
+        from core.semantic_search import reindex_embeddings
+        stats = reindex_embeddings(
+            db,
+            user_id=target_user_id,
+            all_messages=all_flag,
+            dry_run=dry_run,
+            batch_size=batch_size
+        )
+        return JSONResponse(content={
+            "status": "success",
+            "admin_user": user_id,
+            "target_user_id": target_user_id,
+            "all": all_flag,
+            "dry_run": dry_run,
+            "batch_size": batch_size,
+            "stats": stats
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Semantic reindex error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/files/supported")
 async def get_supported_file_types():
     """Get list of supported file types."""
@@ -1597,19 +1640,29 @@ async def get_metrics():
         # Add chat storage statistics (PostgreSQL)
         try:
             from sqlalchemy.orm import Session as _Sess
-            from core.db_models import ChatMessage
+            from core.db_models import ChatMessage, ChatEmbedding
             # Create an ad-hoc session for counting (metrics is fast path)
-            db: _Sess = next(get_db())
+            db2: _Sess = next(get_db())
             try:
-                total_chats = db.query(ChatMessage.chat_id).distinct().count()
-                total_messages = db.query(ChatMessage).count()
+                total_chats = db2.query(ChatMessage.chat_id).distinct().count()
+                total_messages = db2.query(ChatMessage).count()
+                # Eligible for embeddings (assistant + file)
+                from sqlalchemy import func
+                eligible_messages = db2.query(func.count(ChatMessage.id)).filter(ChatMessage.role.in_(["assistant", "file"])).scalar() or 0
+                total_embeddings = db2.query(func.count(ChatEmbedding.id)).scalar() or 0
             finally:
-                db.close()
+                db2.close()
+            coverage = float(total_embeddings) / float(eligible_messages) if eligible_messages else 0.0
             metrics["vector_db"] = {
                 "total_entries": total_chats,
                 "total_messages": total_messages,
                 "available": True,
-                "type": "postgresql"
+                "type": "postgresql+pgvector",
+                "semantic": {
+                    "eligible_messages": eligible_messages,
+                    "embedded_messages": total_embeddings,
+                    "coverage_ratio": coverage
+                }
             }
         except Exception as e:
             logger.debug(f"Error getting storage stats: {e}")

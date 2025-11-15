@@ -98,3 +98,63 @@ def search_semantic(session: Session, user_id: int, query: str, n_results: int =
     except Exception as e:
         logger.debug(f"Semantic search error: {e}")
         return []
+
+
+def reindex_embeddings(
+    session: Session,
+    user_id: Optional[int] = None,
+    all_messages: bool = False,
+    dry_run: bool = False,
+    batch_size: int = 500
+) -> Dict[str, Any]:
+    """Reindex embeddings (assistant + file roles).
+
+    Args:
+        session: DB session
+        user_id: limit to specific user (None = all users)
+        all_messages: if True reindex all (replace existing). If False only missing.
+        dry_run: if True do not write changes
+        batch_size: batch size
+
+    Returns:
+        Dict with statistics.
+    """
+    roles = ["assistant", "file"]
+    stats = {"processed": 0, "indexed": 0, "replaced": 0, "errors": 0}
+    try:
+        base_q = session.query(ChatMessage).filter(ChatMessage.role.in_(roles))
+        if user_id is not None:
+            base_q = base_q.filter(ChatMessage.user_id == user_id)
+
+        # Determine strategy
+        if all_messages:
+            messages = base_q.order_by(ChatMessage.id.asc()).all()
+        else:
+            # Missing only: left join to embeddings
+            from sqlalchemy import exists
+            subq = session.query(ChatEmbedding.id).filter(ChatEmbedding.message_id == ChatMessage.id)
+            messages = base_q.filter(~exists(subq)).order_by(ChatMessage.id.asc()).all()
+
+        for msg in messages:
+            stats["processed"] += 1
+            if dry_run:
+                continue
+            try:
+                if all_messages:
+                    # Delete existing embedding if any
+                    if msg.id:
+                        session.query(ChatEmbedding).filter(ChatEmbedding.message_id == msg.id).delete()
+                        session.flush()
+                        stats["replaced"] += 1
+                ok = index_message(session, msg)
+                if ok:
+                    stats["indexed"] += 1
+            except Exception as ie:
+                session.rollback()
+                stats["errors"] += 1
+                logger.debug(f"Reindex error msg_id={msg.id}: {ie}")
+        return stats
+    except Exception as e:
+        logger.error(f"Reindex embeddings fatal error: {e}")
+        stats["fatal"] = str(e)
+        return stats
