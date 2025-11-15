@@ -1165,7 +1165,9 @@ async def get_vector_db_entry(
     except HTTPException:
         raise
     except Exception as e:
+        # Extra logging to diagnose 503 occurrences
         logger.error(f"Error getting chat {chat_id}: {e}", exc_info=True)
+        # Return explicit 500; upstream 503 indicates external layer issue
         raise HTTPException(status_code=500, detail=f"Error reading entry: {str(e)}")
 
 @app.delete("/api/vector-db/{chat_id}")
@@ -1881,21 +1883,24 @@ async def import_history_file(request: Request):
 async def health_check():
     """Health check endpoint."""
     try:
-        # Check if archetypes are loaded
+        # Basic readiness: archetypes + pgvector status (optional)
         archetypes_loaded = len(archetypes) > 0
-        
-        # Check if vector database is available
-        vector_db_available = False
+        pgvector_available = False
         try:
-            from vector_db.client import is_vector_db_available
-            vector_db_available = is_vector_db_available()
+            from core.database import get_db as _get_db
+            from core.semantic_search import is_pgvector_enabled
+            db_session = next(_get_db())
+            try:
+                pgvector_available = is_pgvector_enabled(db_session)
+            finally:
+                db_session.close()
         except Exception:
-            pass
-        
+            pgvector_available = False
+
         health_status = {
             "status": "healthy" if archetypes_loaded else "degraded",
             "archetypes_loaded": archetypes_loaded,
-            "vector_db_available": vector_db_available,
+            "semantic_search": pgvector_available,
             "timestamp": datetime.now().isoformat()
         }
         

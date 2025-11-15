@@ -51,7 +51,10 @@ def test_get_vector_db():
     """Test getting vector database entries."""
     response = client.get("/api/vector-db")
     assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    data = response.json()
+    assert isinstance(data, dict)
+    assert "entries" in data
+    assert "count" in data
 
 def test_get_supported_models():
     """Test getting supported models."""
