@@ -21,7 +21,7 @@ from core.settings import settings
 from core.rate_limit import RateLimitMiddleware
 
 # Import authentication
-from core.auth import init_admin_user
+from core.auth import init_admin_user, get_current_user_id_optional
 
 # Import database (only in production)
 if settings.is_production:
