@@ -1125,8 +1125,8 @@ async def get_vector_db_entry(
             if not chat_metadata and msg.msg_metadata:
                 chat_metadata = msg.msg_metadata.copy()
         
-        # Create document preview
-        document = "\\n\\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in formatted_messages])
+        # Create document preview with real newlines (not escaped)
+        document = "\n\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in formatted_messages])
         
         return JSONResponse(content={
             "id": chat_id,
@@ -1220,6 +1220,10 @@ async def update_vector_db_entry(
         
         # Update the first assistant message (main response)
         assistant_messages[0].content = document
+        # Optionally update metadata if provided
+        metadata = data.get("metadata")
+        if isinstance(metadata, dict):
+            assistant_messages[0].msg_metadata = metadata
         db.commit()
         
         logger.info(f"Updated assistant message in chat {chat_id} for user {user_id}")

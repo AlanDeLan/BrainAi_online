@@ -1618,6 +1618,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             elements.vectorDbEntriesList.innerHTML = '';
+
+            // Deduplicate entries by ID to avoid accidental duplicates
+            if (data && Array.isArray(data.entries)) {
+                const uniqueMap = new Map();
+                data.entries.forEach(e => {
+                    if (e && e.id && !uniqueMap.has(e.id)) {
+                        uniqueMap.set(e.id, e);
+                    }
+                });
+                data.entries = Array.from(uniqueMap.values());
+            }
             
             if (data.entries && data.entries.length > 0) {
                 data.entries.forEach(entry => {
@@ -1729,9 +1740,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 try {
+                    const headers = getAuthHeaders();
+                    headers['Content-Type'] = 'application/json';
                     const saveResponse = await fetch(`/api/vector-db/${chatId}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         body: JSON.stringify({ document, metadata })
                     });
                     
