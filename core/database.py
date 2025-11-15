@@ -47,8 +47,30 @@ class DatabaseManager:
                 bind=self.engine
             )
             
-            # Create tables
+            # Enable pgvector extension BEFORE creating tables that depend on it
+            try:
+                if self.database_url.startswith("postgresql"):
+                    with self.engine.begin() as conn:
+                        conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector;")
+            except Exception as ext_e:
+                logger.warning(f"pgvector extension setup skipped: {ext_e}")
+
+            # Create tables (after ensuring pgvector extension)
             Base.metadata.create_all(bind=self.engine)
+
+            # Create semantic index if possible
+            try:
+                if self.database_url.startswith("postgresql"):
+                    with self.engine.begin() as conn:
+                        conn.exec_driver_sql(
+                            """
+                            CREATE INDEX IF NOT EXISTS idx_chat_embeddings_cosine
+                            ON chat_embeddings USING ivfflat (embedding vector_cosine_ops)
+                            WITH (lists = 100);
+                            """
+                        )
+            except Exception as ext_e:
+                logger.warning(f"pgvector index setup skipped: {ext_e}")
             
             self._initialized = True
             logger.info("✅ Database initialized successfully")

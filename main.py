@@ -35,6 +35,7 @@ import aiofiles
 import yaml
 import shutil
 from datetime import datetime
+from core.semantic_search import index_message, search_semantic, is_pgvector_enabled
 
 # Global variable to store server object (for graceful shutdown)
 _server_instance: Optional[object] = None
@@ -205,6 +206,7 @@ async def process_text(
                 try:
                     from core.db_models import ChatMessage
                     from sqlalchemy import and_
+                    from sqlalchemy import and_
                     
                     messages = db.query(ChatMessage).filter(
                         and_(
@@ -282,6 +284,12 @@ async def process_text(
                     db.commit()
                     logger.info(f"💾 Saved to PostgreSQL: chat_id={chat_id}, messages={existing_count} -> {existing_count + 2}")
                     increment_counter("db_saves")
+
+                    # Index assistant message embedding (pgvector), ignore failures
+                    try:
+                        index_message(db, assistant_msg)
+                    except Exception as _e:
+                        logger.debug(f"Indexing assistant message failed: {_e}")
                     
                 except Exception as e:
                     db.rollback()
@@ -1016,7 +1024,7 @@ async def search_vector_db(
     db: Session = Depends(get_db),
     user_id: Optional[int] = Depends(get_current_user_id_optional)
 ):
-    """Search PostgreSQL database for relevant chats (simple text search)."""
+    """Search chats using pgvector semantic search with LIKE fallback."""
     try:
         if not query:
             raise HTTPException(status_code=400, detail="Query parameter is required")
@@ -1027,50 +1035,68 @@ async def search_vector_db(
         # Default to admin if no auth
         if user_id is None:
             user_id = 1
-        
-        # Simple LIKE search (replace with PostgreSQL full-text search if needed)
-        query_lower = f"%{query.lower()}%"
-        
-        # Search in message content
-        matching_messages = db.query(
-            ChatMessage.chat_id,
-            func.max(ChatMessage.created_at).label('last_message')
-        ).filter(
-            and_(
-                ChatMessage.user_id == user_id,
-                ChatMessage.content.ilike(query_lower)
-            )
-        ).group_by(
-            ChatMessage.chat_id
-        ).order_by(
-            func.max(ChatMessage.created_at).desc()
-        ).limit(n_results).all()
-        
-        # Format results
+        # Try semantic search first if pgvector available
         results = []
-        for match in matching_messages:
-            # Get preview
-            first_msg = db.query(ChatMessage).filter(
+        source = "postgresql"
+        try:
+            if is_pgvector_enabled(db):
+                sem = search_semantic(db, user_id=user_id, query=query, n_results=int(n_results))
+                if sem:
+                    # Enrich with archetype preview
+                    for item in sem:
+                        first_msg = db.query(ChatMessage).filter(
+                            and_(ChatMessage.chat_id == item["chat_id"], ChatMessage.user_id == user_id)
+                        ).order_by(ChatMessage.message_index).first()
+                        archetype = first_msg.msg_metadata.get("archetype", "unknown") if first_msg and first_msg.msg_metadata else "unknown"
+                        results.append({
+                            "chat_id": item["chat_id"],
+                            "text": item["text"][:200] if item.get("text") else "",
+                            "archetype": archetype,
+                            "timestamp": item.get("timestamp"),
+                            "relevance": item.get("relevance", 0.0)
+                        })
+                    source = "pgvector"
+        except Exception as _e:
+            logger.debug(f"Semantic search failed, fallback to LIKE: {_e}")
+
+        # Fallback: simple LIKE search if semantic empty
+        if not results:
+            query_lower = f"%{query.lower()}%"
+            matching_messages = db.query(
+                ChatMessage.chat_id,
+                func.max(ChatMessage.created_at).label('last_message')
+            ).filter(
                 and_(
-                    ChatMessage.chat_id == match.chat_id,
-                    ChatMessage.user_id == user_id
+                    ChatMessage.user_id == user_id,
+                    ChatMessage.content.ilike(query_lower)
                 )
-            ).order_by(ChatMessage.message_index).first()
-            
-            if first_msg:
-                results.append({
-                    "chat_id": match.chat_id,
-                    "text": first_msg.content[:200],
-                    "archetype": first_msg.msg_metadata.get("archetype", "unknown") if first_msg.msg_metadata else "unknown",
-                    "timestamp": match.last_message.isoformat() if match.last_message else None,
-                    "relevance": 0.5  # Placeholder (no semantic search)
-                })
-        
+            ).group_by(
+                ChatMessage.chat_id
+            ).order_by(
+                func.max(ChatMessage.created_at).desc()
+            ).limit(n_results).all()
+
+            for match in matching_messages:
+                first_msg = db.query(ChatMessage).filter(
+                    and_(
+                        ChatMessage.chat_id == match.chat_id,
+                        ChatMessage.user_id == user_id
+                    )
+                ).order_by(ChatMessage.message_index).first()
+                if first_msg:
+                    results.append({
+                        "chat_id": match.chat_id,
+                        "text": first_msg.content[:200],
+                        "archetype": first_msg.msg_metadata.get("archetype", "unknown") if first_msg.msg_metadata else "unknown",
+                        "timestamp": match.last_message.isoformat() if match.last_message else None,
+                        "relevance": 0.5
+                    })
+
         return JSONResponse(content={
             "results": results,
             "query": query,
             "available": True,
-            "source": "postgresql"
+            "source": source
         })
     except HTTPException:
         raise
@@ -1228,6 +1254,12 @@ async def update_vector_db_entry(
         
         logger.info(f"Updated assistant message in chat {chat_id} for user {user_id}")
         
+        # Reindex updated assistant message
+        try:
+            index_message(db, assistant_messages[0])
+        except Exception as _e:
+            logger.debug(f"Reindex after update failed: {_e}")
+        
         return JSONResponse(content={
             "status": "success", 
             "message": f"Entry {chat_id} updated",
@@ -1317,6 +1349,24 @@ async def upload_file(
         db.commit()
         
         logger.info(f"File processed: {file.filename} -> {saved_count} chunks saved to DB (chat_id={chat_id})")
+        
+        # Index saved file chunks (semantic embeddings)
+        try:
+            # Fetch recent file-role messages for this upload timestamp
+            file_msgs = db.query(ChatMessage).filter(
+                and_(
+                    ChatMessage.chat_id == chat_id,
+                    ChatMessage.user_id == user_id,
+                    ChatMessage.role == "file"
+                )
+            ).order_by(ChatMessage.message_index).all()
+            for m in file_msgs:
+                try:
+                    index_message(db, m)
+                except Exception as _e:
+                    logger.debug(f"Indexing file chunk failed: {_e}")
+        except Exception as _e:
+            logger.debug(f"Collecting file messages for indexing failed: {_e}")
         
         return JSONResponse(content={
             "status": "success",

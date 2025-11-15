@@ -14,6 +14,14 @@ import hashlib
 
 Base = declarative_base()
 
+# Optional pgvector integration
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except Exception:
+    Vector = None  # type: ignore
+    PGVECTOR_AVAILABLE = False
+
 
 class User(Base):
     """User model for authentication."""
@@ -115,3 +123,27 @@ class UserSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     last_activity = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
+
+
+# Semantic embeddings table (pgvector)
+class ChatEmbedding(Base):
+    """Semantic embedding for messages/chats (pgvector-backed)."""
+    __tablename__ = "chat_embeddings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    chat_id = Column(String(255), nullable=False, index=True)
+    message_id = Column(Integer, ForeignKey("chat_messages.id"), nullable=True, index=True)
+    role = Column(String(50), nullable=True)
+    content = Column(Text, nullable=False)
+    # Fixed 768-dim to match Google text-embedding-004; if pgvector not available, store as JSON for fallback
+    if PGVECTOR_AVAILABLE:
+        embedding = Column(Vector(768))  # type: ignore
+    else:
+        embedding = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index('idx_embeddings_user_chat', 'user_id', 'chat_id'),
+        Index('idx_embeddings_msg', 'message_id'),
+    )
