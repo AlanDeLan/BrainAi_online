@@ -1242,12 +1242,21 @@ async def update_vector_db_entry(
 
 # --- API for file upload and processing ---
 @app.post("/api/files/upload")
-async def upload_file(file: UploadFile = File(...)):
-    """Upload and process a text file for vector database."""
+async def upload_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_current_user_id_optional)
+):
+    """Upload and process a text file; store chunks in PostgreSQL (no vector DB)."""
     try:
         from core.file_processor import process_file, is_file_supported, get_supported_extensions
-        from vector_db.client import save_message, is_vector_db_available
         import datetime
+        from core.db_models import ChatMessage
+        from sqlalchemy import and_
+
+        # Default to admin if no auth
+        if user_id is None:
+            user_id = 1
         
         # Check if file is supported
         if not is_file_supported(file.filename):
@@ -1255,13 +1264,6 @@ async def upload_file(file: UploadFile = File(...)):
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported file type. Supported: {supported}"
-            )
-        
-        # Check vector DB availability
-        if not is_vector_db_available():
-            raise HTTPException(
-                status_code=503,
-                detail="Vector database not available. Cannot process files."
             )
         
         # Save uploaded file temporarily
@@ -1282,31 +1284,45 @@ async def upload_file(file: UploadFile = File(...)):
                 detail="File is empty or contains no text"
             )
         
-        # Save chunks to vector database
+        # Persist chunks as messages in DB under a synthetic chat
         timestamp = datetime.datetime.now().isoformat()
+        chat_id = f"file_{file.filename}"
+
+        # Determine next message_index for this chat
+        try:
+            existing = db.query(ChatMessage).filter(
+                and_(ChatMessage.chat_id == chat_id, ChatMessage.user_id == user_id)
+            ).order_by(ChatMessage.message_index.desc()).first()
+            next_index = (existing.message_index + 1) if existing else 0
+        except Exception:
+            next_index = 0
+
         saved_count = 0
-        
         for chunk in chunks:
-            # Create unique ID for chunk
-            chunk_id = f"file_{file.filename}_{chunk['chunk_index']}"
-            
-            # Save to vector DB
-            save_message(
-                chat_id=f"file_{file.filename}",
-                message_id=chunk_id,
-                message_text=chunk["text"],
+            msg = ChatMessage(
+                chat_id=chat_id,
+                user_id=user_id,
                 role="file",
-                archetype=None,
-                timestamp=timestamp
+                content=chunk["text"],
+                message_index=next_index,
+                msg_metadata={
+                    "filename": file.filename,
+                    "chunk_index": chunk.get("chunk_index"),
+                    "timestamp": timestamp
+                }
             )
+            db.add(msg)
+            next_index += 1
             saved_count += 1
+        db.commit()
         
-        logger.info(f"File processed: {file.filename} -> {saved_count} chunks saved to vector DB")
+        logger.info(f"File processed: {file.filename} -> {saved_count} chunks saved to DB (chat_id={chat_id})")
         
         return JSONResponse(content={
             "status": "success",
-            "message": f"File '{file.filename}' processed and saved to vector database",
+            "message": f"File '{file.filename}' processed and saved",
             "filename": file.filename,
+            "chat_id": chat_id,
             "chunks_count": saved_count,
             "file_size": len(content)
         })
@@ -1325,7 +1341,7 @@ async def upload_file(file: UploadFile = File(...)):
         if 'file_path' in locals() and os.path.exists(file_path):
             try:
                 os.remove(file_path)
-            except:
+            except Exception:
                 pass
         raise HTTPException(
             status_code=500,
@@ -1526,25 +1542,25 @@ async def get_metrics():
             logger.debug(f"Error getting history stats: {e}")
             metrics["history"] = {"total_chats": 0}
         
-        # Add vector DB statistics
+        # Add chat storage statistics (PostgreSQL)
         try:
-            from vector_db.client import get_all_chats, is_vector_db_available, get_vector_db_type
-            if is_vector_db_available():
-                vector_db_chats = get_all_chats()
-                db_type = get_vector_db_type()
-                metrics["vector_db"] = {
-                    "total_entries": len(vector_db_chats),
-                    "available": True,
-                    "type": db_type
-                }
-            else:
-                metrics["vector_db"] = {
-                    "total_entries": 0,
-                    "available": False,
-                    "error": "Vector database not available"
-                }
+            from sqlalchemy.orm import Session as _Sess
+            from core.db_models import ChatMessage
+            # Create an ad-hoc session for counting (metrics is fast path)
+            db: _Sess = next(get_db())
+            try:
+                total_chats = db.query(ChatMessage.chat_id).distinct().count()
+                total_messages = db.query(ChatMessage).count()
+            finally:
+                db.close()
+            metrics["vector_db"] = {
+                "total_entries": total_chats,
+                "total_messages": total_messages,
+                "available": True,
+                "type": "postgresql"
+            }
         except Exception as e:
-            logger.debug(f"Error getting vector DB stats: {e}")
+            logger.debug(f"Error getting storage stats: {e}")
             metrics["vector_db"] = {
                 "total_entries": 0,
                 "available": False,
