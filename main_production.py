@@ -25,9 +25,8 @@ from core.rate_limit import RateLimitMiddleware
 # Import authentication
 from core.auth import init_admin_user, get_current_user_id_optional
 
-# Import database (only in production)
-if settings.is_production:
-    from core.database import init_database
+# Import database
+from core.database import init_database
 
 # Import original app
 from main import app as original_app
@@ -45,28 +44,28 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     
     try:
-        # Initialize database (production only with valid PostgreSQL URL)
-        if settings.is_production and settings.database_url.startswith("postgresql"):
-            try:
-                logger.info("📊 Initializing PostgreSQL database...")
-                # Log database URL (masked password)
-                masked_url = settings.database_url.split('@')[1] if '@' in settings.database_url else 'invalid URL'
-                logger.info(f"Database host: {masked_url}")
-                init_database(settings.database_url)
-                logger.info("✅ Database initialized")
-                
-                # Initialize admin user (re-enabled with native bcrypt)
-                if settings.admin_password != "admin123":
-                    logger.info("👤 Initializing admin user...")
-                    init_admin_user(settings.admin_username, settings.admin_password)
-                    logger.info("✅ Admin user initialized")
-                else:
-                    logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
-            except Exception as db_error:
-                logger.warning(f"⚠️ Database initialization skipped: {db_error}")
-                logger.info("💡 Run migration script: railway run python migrate_db.py")
+        # Initialize database (PostgreSQL in production, SQLite in development)
+        logger.info("📊 Initializing database...")
+        
+        if settings.database_url and settings.database_url.startswith("postgresql"):
+            # Production: PostgreSQL
+            masked_url = settings.database_url.split('@')[1] if '@' in settings.database_url else 'invalid URL'
+            logger.info(f"Database: PostgreSQL at {masked_url}")
+            init_database(settings.database_url)
         else:
-            logger.info("⚠️ Skipping database initialization (not production PostgreSQL)")
+            # Development: SQLite
+            logger.info("Database: SQLite (development mode)")
+            init_database("sqlite:///brainai.db")
+        
+        logger.info("✅ Database initialized")
+        
+        # Initialize admin user (re-enabled with native bcrypt)
+        logger.info("👤 Initializing admin user...")
+        init_admin_user(settings.admin_username, settings.admin_password)
+        logger.info("✅ Admin user initialized")
+        
+        if settings.admin_password == "admin123":
+            logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
         
         # Log configuration
         logger.info(f"🔧 Configuration:")
