@@ -7,6 +7,7 @@ import sys
 from typing import Dict, Optional, Any
 from enum import Enum
 from core.utils import get_base_directory
+from core.logger import logger
 
 class AIProvider(Enum):
     """AI provider types."""
