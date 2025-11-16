@@ -73,7 +73,7 @@ class DatabaseManager:
                 logger.warning(f"pgvector index setup skipped: {ext_e}")
             
             self._initialized = True
-            logger.info("✅ Database initialized successfully")
+            logger.info("[OK] Database initialized successfully")
             
         except Exception as e:
             logger.error(f"❌ Database initialization failed: {e}", exc_info=True)

@@ -129,6 +129,11 @@ def generate_response(model_name: str, system_prompt: str = None, user_message: 
     provider = get_current_provider()
     config = get_provider_config()
     
+    # Auto-fallback: if Google AI is configured but key is missing, use OpenAI
+    if provider == AIProvider.GOOGLE_AI and not config.get('google_api_key'):
+        logger.warning("GOOGLE_API_KEY not found, falling back to OpenAI")
+        provider = AIProvider.OPENAI
+    
     if provider == AIProvider.GOOGLE_AI:
         return _generate_google_ai(model_name, system_prompt=system_prompt, user_message=user_message, context=context, conversation_history=conversation_history, prompt=prompt, chat_id=chat_id, config=config, **kwargs)
     elif provider == AIProvider.OPENAI:

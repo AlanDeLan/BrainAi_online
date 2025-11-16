@@ -1,6 +1,10 @@
 """
 Production-ready startup script with security and monitoring.
 Integrates authentication, rate limiting, and database.
+
+TODO: Refactor to modular router structure
+See REFACTORING_GUIDE.md for migration plan
+Priority: MEDIUM (after test coverage reaches 80%)
 """
 import os
 import sys
@@ -28,8 +32,8 @@ from core.auth import init_admin_user, get_current_user_id_optional
 # Import database
 from core.database import init_database
 
-# Import original app
-from main import app as original_app
+# Import original app (includes MAX_FILE_SIZE and ALLOWED_MIME_TYPES)
+from main import app as original_app, MAX_FILE_SIZE, ALLOWED_MIME_TYPES
 
 
 @asynccontextmanager
@@ -40,12 +44,12 @@ async def lifespan(app: FastAPI):
     """
     # === STARTUP ===
     logger.info("=" * 60)
-    logger.info(f"🚀 Starting BrainAi in {settings.environment.upper()} mode")
+    logger.info(f"[START] Starting BrainAi in {settings.environment.upper()} mode")
     logger.info("=" * 60)
     
     try:
         # Initialize database (PostgreSQL in production, SQLite in development)
-        logger.info("📊 Initializing database...")
+        logger.info("[DB] Initializing database...")
         
         if settings.database_url and settings.database_url.startswith("postgresql"):
             # Production: PostgreSQL
@@ -57,18 +61,18 @@ async def lifespan(app: FastAPI):
             logger.info("Database: SQLite (development mode)")
             init_database("sqlite:///brainai.db")
         
-        logger.info("✅ Database initialized")
+        logger.info("[OK] Database initialized")
         
         # Initialize admin user (re-enabled with native bcrypt)
-        logger.info("👤 Initializing admin user...")
+        logger.info("[USER] Initializing admin user...")
         init_admin_user(settings.admin_username, settings.admin_password)
-        logger.info("✅ Admin user initialized")
+        logger.info("[OK] Admin user initialized")
         
         if settings.admin_password == "admin123":
-            logger.warning("⚠️ Using default admin password - CHANGE IN PRODUCTION!")
+            logger.warning("[WARNING] Using default admin password - CHANGE IN PRODUCTION!")
         
         # Log configuration
-        logger.info(f"🔧 Configuration:")
+        logger.info("[CONFIG] Configuration:")
         logger.info(f"  - Environment: {settings.environment}")
         logger.info(f"  - Debug: {settings.debug}")
         logger.info(f"  - AI Provider: {settings.ai_provider}")
@@ -76,20 +80,20 @@ async def lifespan(app: FastAPI):
         logger.info(f"  - Rate Limit: {settings.rate_limit_per_minute}/min, {settings.rate_limit_per_hour}/hour")
         
         logger.info("=" * 60)
-        logger.info("✅ Application started successfully!")
+        logger.info("[OK] Application started successfully!")
         logger.info("=" * 60)
         
     except Exception as e:
-        logger.error(f"❌ Failed to start application: {e}", exc_info=True)
+        logger.error(f"[ERROR] Failed to start application: {e}", exc_info=True)
         raise
     
     yield
     
     # === SHUTDOWN ===
     logger.info("=" * 60)
-    logger.info("🛑 Shutting down BrainAi...")
+    logger.info("[STOP] Shutting down BrainAi...")
     logger.info("=" * 60)
-    logger.info("✅ Application shutdown complete")
+    logger.info("[OK] Application shutdown complete")
 
 
 # Create production app with lifespan

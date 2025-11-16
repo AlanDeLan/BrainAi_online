@@ -6,6 +6,22 @@ from typing import List, Optional
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+
+# TODO: Refactor to modular router structure
+# See REFACTORING_GUIDE.md for migration plan
+# Priority: MEDIUM (after test coverage reaches 80%)
+
+# File upload validation constants
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_MIME_TYPES = [
+    "text/plain",
+    "text/markdown",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/msword",  # .doc
+    "text/csv",
+    "application/json"
+]
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -205,7 +221,6 @@ async def process_text(
             if remember and chat_id:
                 try:
                     from core.db_models import ChatMessage
-                    from sqlalchemy import and_
                     from sqlalchemy import and_
                     
                     messages = db.query(ChatMessage).filter(
@@ -1292,21 +1307,43 @@ async def upload_file(
         if user_id is None:
             user_id = 1
         
-        # Check if file is supported
+        # Validate file size
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size: {MAX_FILE_SIZE / 1024 / 1024:.1f}MB"
+            )
+        
+        if file_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty"
+            )
+        
+        # Validate MIME type
+        if file.content_type and file.content_type not in ALLOWED_MIME_TYPES:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Unsupported file type: {file.content_type}. Allowed: {', '.join(ALLOWED_MIME_TYPES)}"
+            )
+        
+        # Check if file extension is supported
         if not is_file_supported(file.filename):
             supported = ", ".join(get_supported_extensions())
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file type. Supported: {supported}"
+                detail=f"Unsupported file extension. Supported: {supported}"
             )
         
-        # Save uploaded file temporarily
+        # Save uploaded file temporarily (content already read for validation)
         file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+            f.write(file_content)
         
-        logger.info(f"File uploaded: {file.filename} ({len(content)} bytes)")
+        logger.info(f"File uploaded: {file.filename} ({file_size} bytes, {file.content_type})")
         
         # Process file into chunks
         chunks = process_file(file_path, chunk_size=1000, chunk_overlap=200)
