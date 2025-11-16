@@ -257,9 +257,17 @@ async def process_text(
             )
             
             if "error" in result:
-                logger.error(f"Error processing request: {result['error']}")
+                error_msg = result["error"]
+                logger.error(f"Error processing request: {error_msg}")
                 increment_counter("api_errors")
-                raise HTTPException(status_code=500, detail=result["error"])
+                
+                # Check if it's an API key error
+                if "API_KEY" in error_msg or "not found in configuration" in error_msg:
+                    detail_msg = f"{error_msg}\n\nPlease configure AI provider in .env file:\n- GOOGLE_API_KEY for Google AI\n- OPENAI_API_KEY for OpenAI"
+                else:
+                    detail_msg = error_msg
+                
+                raise HTTPException(status_code=500, detail=detail_msg)
             
             # --- Save to PostgreSQL database ---
             if remember and chat_id:

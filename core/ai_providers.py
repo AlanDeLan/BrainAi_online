@@ -131,12 +131,25 @@ def generate_response(model_name: str, system_prompt: str = None, user_message: 
     
     # Auto-fallback: if Google AI is configured but key is missing, use OpenAI
     if provider == AIProvider.GOOGLE_AI and not config.get('google_api_key'):
-        logger.warning("GOOGLE_API_KEY not found, falling back to OpenAI")
+        logger.warning("=" * 60)
+        logger.warning("⚠️  GOOGLE_API_KEY not found in environment!")
+        logger.warning("Automatically switching to OpenAI provider...")
+        logger.warning("To fix: Add GOOGLE_API_KEY to your .env file")
+        logger.warning("Or set AI_PROVIDER=openai in .env")
+        logger.warning("=" * 60)
         provider = AIProvider.OPENAI
+        
+        # Verify OpenAI is available
+        if not config.get('openai_api_key'):
+            error_msg = "Neither GOOGLE_API_KEY nor OPENAI_API_KEY found! Please configure at least one AI provider."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
     
     if provider == AIProvider.GOOGLE_AI:
+        logger.debug(f"Using Google AI provider: {model_name}")
         return _generate_google_ai(model_name, system_prompt=system_prompt, user_message=user_message, context=context, conversation_history=conversation_history, prompt=prompt, chat_id=chat_id, config=config, **kwargs)
     elif provider == AIProvider.OPENAI:
+        logger.debug(f"Using OpenAI provider: {model_name}")
         return _generate_openai(model_name, system_prompt=system_prompt, user_message=user_message, context=context, conversation_history=conversation_history, prompt=prompt, chat_id=chat_id, config=config, **kwargs)
     else:
         raise ValueError(f"Unknown provider: {provider}")

@@ -71,11 +71,33 @@ async def lifespan(app: FastAPI):
         if settings.admin_password == "admin123":
             logger.warning("[WARNING] Using default admin password - CHANGE IN PRODUCTION!")
         
+        # Verify AI provider configuration
+        import os
+        logger.info("=" * 60)
+        logger.info("[AI] AI Provider Configuration:")
+        logger.info(f"  - Provider: {settings.ai_provider}")
+        
+        if settings.ai_provider == "google_ai":
+            if os.getenv("GOOGLE_API_KEY"):
+                logger.info("  - Google AI: [OK] API key found")
+            else:
+                logger.warning("  - Google AI: [WARNING] GOOGLE_API_KEY not found!")
+                logger.warning("  - Will auto-switch to OpenAI if available")
+                
+        if os.getenv("OPENAI_API_KEY"):
+            logger.info("  - OpenAI: [OK] API key found")
+        else:
+            if settings.ai_provider == "openai":
+                logger.error("  - OpenAI: [ERROR] OPENAI_API_KEY not found!")
+            else:
+                logger.info("  - OpenAI: Not configured (fallback unavailable)")
+        
+        logger.info("=" * 60)
+        
         # Log configuration
         logger.info("[CONFIG] Configuration:")
         logger.info(f"  - Environment: {settings.environment}")
         logger.info(f"  - Debug: {settings.debug}")
-        logger.info(f"  - AI Provider: {settings.ai_provider}")
         logger.info(f"  - CORS Origins: {settings.cors_origins}")
         logger.info(f"  - Rate Limit: {settings.rate_limit_per_minute}/min, {settings.rate_limit_per_hour}/hour")
         
