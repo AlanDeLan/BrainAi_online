@@ -78,6 +78,11 @@ header h1, .modal-content h2 {
     font-weight: 400;
 }
 
+header h1 {
+    font-weight: 700;
+    color: #1e5a8e;
+}
+
 .modal-content h2 {
     font-size: 1.0em; /* Зменшено на 1 пункт */
 }
@@ -105,6 +110,12 @@ header h1, .modal-content h2 {
 .auth-modal-content {
     max-width: 400px;
     padding: 30px;
+}
+
+.auth-modal-content h2 {
+    font-size: 1.2em;
+    font-weight: 700;
+    margin-bottom: 25px;
 }
 
 .auth-tabs {
