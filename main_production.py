@@ -47,13 +47,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"[START] Starting BrainAi in {settings.environment.upper()} mode")
     logger.info("=" * 60)
     
-    # DEBUG: Check environment variables
-    logger.info("[DEBUG] Environment variables check:")
-    logger.info(f"  - GOOGLE_API_KEY exists: {bool(os.getenv('GOOGLE_API_KEY'))}")
-    logger.info(f"  - AI_PROVIDER: {os.getenv('AI_PROVIDER', 'not set')}")
-    logger.info(f"  - settings.google_api_key: {bool(settings.google_api_key)}")
-    logger.info(f"  - settings.ai_provider: {settings.ai_provider}")
-    
     try:
         # Initialize database (PostgreSQL in production, SQLite in development)
         logger.info("[DB] Initializing database...")
