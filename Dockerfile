@@ -3,6 +3,10 @@
 
 FROM python:3.11-slim
 
+# Build ID для примусового оновлення (Railway cache buster)
+ARG RAILWAY_GIT_COMMIT_SHA=unknown
+ENV BUILD_VERSION=${RAILWAY_GIT_COMMIT_SHA}
+
 # Встановлюємо робочу директорію
 WORKDIR /app
 
