@@ -6,6 +6,10 @@ import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
+from dotenv import load_dotenv
+
+# Explicitly load .env file before Settings initialization
+load_dotenv(override=False)
 
 
 class Settings(BaseSettings):
