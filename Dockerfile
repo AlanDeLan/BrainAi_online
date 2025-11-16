@@ -23,7 +23,9 @@ COPY requirements.production.txt requirements.txt
 # Встановлюємо Python залежності
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копіюємо весь проект
+# Копіюємо весь проект (з примусовою інвалідацією кешу)
+# Railway bug workaround: додаємо timestamp для гарантованого оновлення
+RUN echo "Build timestamp: $(date)" > /tmp/build_timestamp
 COPY . .
 
 # КРИТИЧНО: Видаляємо весь Python cache щоб уникнути використання старого коду
