@@ -27,7 +27,7 @@ def load_provider_config():
     """Load AI provider configuration from settings or .env file."""
     global _current_provider, _provider_config
     
-    # Try to load from settings first (production)
+    # Try to load from settings first (production/Railway)
     try:
         from core.settings import settings
         _provider_config = {
@@ -37,11 +37,17 @@ def load_provider_config():
         }
         provider_name = settings.ai_provider.lower()
         _current_provider = AIProvider(provider_name)
+        
+        # SUCCESS - settings loaded, return immediately
         return _current_provider, _provider_config
-    except Exception:
-        pass  # Fallback to .env loading
+    except Exception as e:
+        # Log the error but continue to fallback
+        import sys
+        if 'core.logger' in sys.modules:
+            from core.logger import logger
+            logger.debug(f"Settings not available, falling back to .env: {e}")
     
-    # Fallback: load from .env file (development)
+    # Fallback: load from .env file or environment variables (development)
     from dotenv import dotenv_values, load_dotenv
     
     base_dir = get_base_directory()
