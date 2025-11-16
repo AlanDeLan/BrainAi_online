@@ -6,10 +6,14 @@ import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
-from dotenv import load_dotenv
 
-# Explicitly load .env file before Settings initialization
-load_dotenv(override=False)
+# Load .env file only if exists (for local development)
+# Railway uses native environment variables, so .env is optional
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=False)
+except ImportError:
+    pass  # dotenv not installed in production
 
 
 class Settings(BaseSettings):
