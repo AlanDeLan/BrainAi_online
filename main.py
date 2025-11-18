@@ -422,20 +422,21 @@ async def delete_history_file(
     db: Session = Depends(get_db),
     user_id: Optional[int] = Depends(get_current_user_id_optional)
 ):
-    """Delete chat from PostgreSQL database."""
+    """Delete chat from PostgreSQL database and vector database."""
     if "/" in filename or "\\" in filename or ".." in filename:
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
     try:
         from core.db_models import ChatMessage
         from sqlalchemy import and_
-        
+        from vector_db.client import delete_chat, is_vector_db_available
+
         # Extract chat_id from filename
         chat_id = filename.replace(".json", "")
-        
+
         # Default to admin if no auth
         if user_id is None:
             user_id = 1
-        
+
         # Delete all messages for this chat
         deleted = db.query(ChatMessage).filter(
             and_(
@@ -443,13 +444,22 @@ async def delete_history_file(
                 ChatMessage.user_id == user_id
             )
         ).delete()
-        
+
         db.commit()
-        
+
         if deleted == 0:
             return JSONResponse(status_code=404, content={"error": "Chat not found"})
-        
+
         logger.info(f"Deleted {deleted} messages from chat {chat_id}")
+
+        # Delete from vector database
+        if is_vector_db_available():
+            try:
+                delete_chat(chat_id)
+                logger.info(f"Chat {chat_id} successfully deleted from vector database.")
+            except Exception as e:
+                logger.warning(f"Failed to delete chat {chat_id} from vector database: {e}")
+
         return JSONResponse(content={"status": "deleted", "messages_deleted": deleted})
     except Exception as e:
         db.rollback()
@@ -1960,54 +1970,4 @@ async def import_history_file(request: Request):
             base_name = filename.replace('.json', '')
             filename = f"{base_name}_imported_{timestamp}.json"
             filepath = os.path.join(HISTORY_DIR, filename)
-        
-        async with aiofiles.open(filepath, "w", encoding="utf-8") as f:
-            await f.write(json.dumps(imported_data, ensure_ascii=False, indent=2))
-        
-        logger.info(f"Imported history file: {filename}")
-        
-        return JSONResponse(content={
-            "status": "success",
-            "message": f"File imported as {filename}",
-            "filename": filename
-        })
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error importing history file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error importing file: {str(e)}")
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    try:
-        # Basic readiness: archetypes + pgvector status (optional)
-        archetypes_loaded = len(archetypes) > 0
-        pgvector_available = False
-        try:
-            from core.database import get_db as _get_db
-            from core.semantic_search import is_pgvector_enabled
-            db_session = next(_get_db())
-            try:
-                pgvector_available = is_pgvector_enabled(db_session)
-            finally:
-                db_session.close()
-        except Exception:
-            pgvector_available = False
-
-        health_status = {
-            "status": "healthy" if archetypes_loaded else "degraded",
-            "archetypes_loaded": archetypes_loaded,
-            "semantic_search": pgvector_available,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        status_code = 200 if health_status["status"] == "healthy" else 503
-        increment_counter("health_checks")
-        return JSONResponse(content=health_status, status_code=status_code)
-    except Exception as e:
-        logger.error(f"Error in health check: {e}", exc_info=True)
-        return JSONResponse(
-            content={"status": "error", "error": str(e)},
-            status_code=500
-        )
+       
