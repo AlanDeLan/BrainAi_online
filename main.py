@@ -426,7 +426,7 @@ async def delete_history_file(
     if "/" in filename or "\\" in filename or ".." in filename:
         return JSONResponse(status_code=400, content={"error": "Invalid filename"})
     try:
-        from core.db_models import ChatMessage
+        from core.db_models import ChatMessage, ChatEmbedding
         from sqlalchemy import and_
         from vector_db.client import delete_chat, is_vector_db_available
 
@@ -437,9 +437,17 @@ async def delete_history_file(
         if user_id is None:
             user_id = 1
 
+        # Delete related embeddings first
+        logger.info(f"Attempting to delete embeddings for chat ID: {chat_id} and user: {user_id}")
+        db.query(ChatEmbedding).filter(
+            and_(
+                ChatEmbedding.chat_id == chat_id,
+                ChatEmbedding.user_id == user_id
+            )
+        ).delete()
+
         # Delete all messages for this chat
         logger.info(f"Attempting to delete chat with ID: {chat_id} for user: {user_id}")
-        
         deleted = db.query(ChatMessage).filter(
             and_(
                 ChatMessage.chat_id == chat_id,
@@ -466,6 +474,7 @@ async def delete_history_file(
     except Exception as e:
         logger.error(f"Error deleting history file {filename}: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 @app.get("/api/history/search")
 async def search_history(query: str = None, archetype: str = None):
@@ -1211,30 +1220,38 @@ async def delete_vector_db_entry(
 ):
     """Delete all messages for a chat from PostgreSQL database."""
     try:
-        from core.db_models import ChatMessage
+        from core.db_models import ChatMessage, ChatEmbedding
         from sqlalchemy import and_
-        
+
         # Default to admin if no auth
         if user_id is None:
             user_id = 1
-        
+
+        # Delete related embeddings first
+        logger.info(f"Attempting to delete embeddings for chat ID: {chat_id} and user: {user_id}")
+        db.query(ChatEmbedding).filter(
+            and_(
+                ChatEmbedding.chat_id == chat_id,
+                ChatEmbedding.user_id == user_id
+            )
+        ).delete()
+
         # Delete all messages for this chat
         logger.info(f"Attempting to delete vector DB entry for chat ID: {chat_id} and user: {user_id}")
-        
         deleted = db.query(ChatMessage).filter(
             and_(
                 ChatMessage.chat_id == chat_id,
                 ChatMessage.user_id == user_id
             )
         ).delete()
-        
+
         db.commit()
-        
+
         if deleted == 0:
             raise HTTPException(status_code=404, detail="Chat not found")
-        
+
         logger.info(f"Deleted {deleted} messages from chat {chat_id}")
-        
+
         return JSONResponse(content={
             "status": "success",
             "message": f"Chat {chat_id} deleted ({deleted} messages)",
