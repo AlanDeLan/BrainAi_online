@@ -632,8 +632,7 @@ async def get_archetypes_config():
                 prompt_file_path = config_copy["prompt_file"]
                 prompt_content = load_prompt_file(prompt_file_path)
                 if prompt_content:
-                    # Add prompt content for editing (temporary field for UI)
-                    # The prompt_file remains the source of truth in YAML
+                    # Add prompt content for editing (temporary field, not saved to YAML)
                     config_copy["_prompt_content"] = prompt_content  # Temporary field, not saved to YAML
             
             # Load additional prompt file contents for editing
@@ -1948,26 +1947,5 @@ async def import_history_file(request: Request):
         # Ensure .json extension
         if not filename.endswith('.json'):
             filename += '.json'
-        
-        # Parse content based on format
-        if format_type.lower() == "markdown":
-            # For markdown, we'll create a simple structure
-            # This is a basic implementation - could be enhanced
-            raise HTTPException(status_code=501, detail="Markdown import not yet implemented")
-        else:
-            # JSON format
-            if isinstance(content, str):
-                imported_data = json.loads(content)
-            else:
-                imported_data = content
-        
-        # Save to history directory
-        filepath = os.path.join(HISTORY_DIR, filename)
-        
-        # If file exists, add timestamp to avoid overwriting
-        if os.path.exists(filepath):
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            base_name = filename.replace('.json', '')
-            filename = f"{base_name}_imported_{timestamp}.json"
-            filepath = os.path.join(HISTORY_DIR, filename)
-       
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
