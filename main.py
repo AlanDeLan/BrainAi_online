@@ -438,6 +438,8 @@ async def delete_history_file(
             user_id = 1
 
         # Delete all messages for this chat
+        logger.info(f"Attempting to delete chat with ID: {chat_id} for user: {user_id}")
+        
         deleted = db.query(ChatMessage).filter(
             and_(
                 ChatMessage.chat_id == chat_id,
@@ -462,8 +464,7 @@ async def delete_history_file(
 
         return JSONResponse(content={"status": "deleted", "messages_deleted": deleted})
     except Exception as e:
-        db.rollback()
-        logger.error(f"Error deleting chat: {e}", exc_info=True)
+        logger.error(f"Error deleting history file {filename}: {e}", exc_info=True)
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/api/history/search")
@@ -1218,6 +1219,8 @@ async def delete_vector_db_entry(
             user_id = 1
         
         # Delete all messages for this chat
+        logger.info(f"Attempting to delete vector DB entry for chat ID: {chat_id} and user: {user_id}")
+        
         deleted = db.query(ChatMessage).filter(
             and_(
                 ChatMessage.chat_id == chat_id,
@@ -1240,8 +1243,7 @@ async def delete_vector_db_entry(
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()
-        logger.error(f"Error deleting chat {chat_id}: {e}", exc_info=True)
+        logger.error(f"Error deleting vector DB entry for chat ID {chat_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {str(e)}")
 
 @app.post("/api/vector-db/{chat_id}")
@@ -1424,6 +1426,10 @@ async def upload_file(
         except Exception as _e:
             logger.debug(f"Collecting file messages for indexing failed: {_e}")
         
+        # Ensure content is defined
+        if 'content' not in locals():
+            content = file.file.read() if hasattr(file, 'file') else b''
+
         return JSONResponse(content={
             "status": "success",
             "message": f"File '{file.filename}' processed and saved",
